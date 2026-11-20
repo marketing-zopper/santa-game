@@ -9,7 +9,7 @@ export const SHIELD = IMG('shield');
 
 /* Santa with his big red sack (user-supplied art, background removed). The sack's open mouth is the
    catch zone, centred on x. Santa always faces the same way. */
-export const SPR = { img: new Image(), w: 900, h: 745, s: 0.1878, anchor: 288, bottom: 739 }; // anchor = centre of the sack opening, source px
+export const SPR = { img: new Image(), w: 900, h: 745, s: 0.21, anchor: 288, bottom: 739 }; // s was 0.1878 in the original; +12% so the sack reads bigger (catch zone is unchanged). anchor = centre of the sack opening, source px
 SPR.img.src = '/assets/santa.webp';
 
 export const ok = (i) => i.complete && i.naturalWidth;
