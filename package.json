@@ -1,0 +1,31 @@
+{
+  "name": "santa-safe-catch",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Zopper in-store Christmas game: React + Vite front end, Supabase Auth / Postgres / Edge Functions back end",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "build:e2e": "vite build --mode e2e --outDir dist-e2e",
+    "preview:e2e": "vite preview --mode e2e --outDir dist-e2e --port 4174 --strictPort",
+    "test:e2e": "playwright test",
+    "verify:backend": "node scripts/verify-backend.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@vitejs/plugin-react": "^6.3.0",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

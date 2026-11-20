@@ -6,6 +6,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.e2e
 supabase/.temp/
 supabase/.branches/
 *.local
@@ -13,3 +14,4 @@ supabase/.branches/
 playwright-report/
 test-results/
 .tmp/
+dist-e2e/
