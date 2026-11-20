@@ -38,7 +38,7 @@ export default function LeaderboardSheet({ onClose }) {
             {state.error ? <li className="lb-empty">{state.error}</li> : null}
             {d && !d.top.length ? <li className="lb-empty">No scores yet. Be the first on the board!</li> : null}
             {d && d.top.map((p) => (
-              <li key={p.rank} className={(p.rank <= 3 ? 'r' + p.rank : '') + (me && me.rank === p.rank ? ' me' : '')}>
+              <li key={p.rank} className={p.rank <= 3 ? 'r' + p.rank : ''}>
                 <span className="rk">{p.rank <= 3 ? <CrownIcon rank={p.rank} /> : null}{p.rank}</span>
                 <span className="nm">{p.name}</span><span className="sc">{p.score}</span>
               </li>

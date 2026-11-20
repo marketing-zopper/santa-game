@@ -30,3 +30,16 @@
 /* the Entry Mode heading is longer than "Join the challenge", so it is a touch smaller to stay on two lines */
 #entryTitle.reg-title{font-size:31px;max-width:66%}
 @media (max-height:700px){#entryTitle.reg-title{font-size:27px}}
+
+/* Very narrow phones (≤ 340 px, e.g. iPhone SE 1st gen): the original intro bar (fixed "Know more" + 26 px Continue) overflowed the
+ * screen and pushed Continue's arrow out of view. Only these small sizes are touched; wider layouts are unchanged. */
+@media (max-width:340px){
+  .intro-actions{gap:8px}
+  .intro-actions .btn.light{padding:0 14px;font-size:16px}
+  .intro-actions #introContinue{font-size:22px;padding:0 12px;gap:8px}
+}
+@media (max-width:360px){
+  .entry-card .btn{font-size:19px;gap:8px;padding:0 12px}
+  .entry-card .btn.light{font-size:18px}
+  .panel.has-back .reg-head .tag{font-size:10px;letter-spacing:.04em;padding:6px 10px 5px}
+}

@@ -1,6 +1,6 @@
 // Guest journey: no login, same game, and NOTHING stored or sent anywhere.
 import { test, expect } from '@playwright/test';
-import { enterAsGuest, clickPlay, botFor, waitForResults } from './helpers.js';
+import { enterAsGuest, clickPlay, botFor, waitForResults, homeReady } from './helpers.js';
 
 test.describe('Guest journey', () => {
   test('QR entry → loading → introduction → entry mode → guest → game home', async ({ page }) => {
@@ -84,7 +84,7 @@ test.describe('Guest journey', () => {
     await expect(page.locator('#menuBest')).toHaveText(String(best));          // remembered while the page lives
     await page.reload();                                                       // …and gone after a refresh
     await page.waitForSelector('#introScreen', { timeout: 20_000 });
-    await page.click('#introContinue'); await page.click('#guestBtn'); await page.waitForSelector('#startScreen');
+    await page.click('#introContinue'); await page.click('#guestBtn'); await homeReady(page);
     await expect(page.locator('#menuBest')).toHaveText('0');
   });
 

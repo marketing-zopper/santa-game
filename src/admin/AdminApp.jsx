@@ -150,7 +150,7 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
   const [flagOnly, setFlagOnly] = useState(false);
   const [player, setPlayer] = useState(null);            // { id, name } — Games tab filtered to one player
   const [offset, setOffset] = useState(0);
-  const [data, setData] = useState({ rows: [], total: 0 });
+  const [data, setData] = useState({ rows: [], total: 0, kind: null });   // `kind` = which tab these rows belong to
   const [confirmId, setConfirmId] = useState(null);
   const [error, setError] = useState('');
   const confirmTimer = useRef(null);
@@ -170,7 +170,11 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
     return p.toString();
   }, [tab, offset, q, verified, flagOnly, player]);
 
-  const loadTable = useCallback(() => adminJson(qs()).then((d) => { setData(d); setError(''); }).catch(handle), [qs, handle]);
+  const seq = useRef(0);   // only the most recent table request may update the screen (responses can arrive out of order)
+  const loadTable = useCallback(() => {
+    const mine = ++seq.current;
+    return adminJson(qs()).then((d) => { if (mine === seq.current) { setData({ ...d, kind: tab }); setError(''); } }).catch((e) => { if (mine === seq.current) handle(e); });
+  }, [qs, tab, handle]);
   useEffect(() => { loadTable(); }, [loadTable]);
 
   const selectTab = (t) => { setTab(t); setOffset(0); if (t !== 'games') setPlayer(null); };
@@ -192,7 +196,9 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
     } catch (e) { handle(e); }
   };
 
-  const s = stats, cols = COLS[tab], total = data.total;
+  // Never render another tab's rows under this tab's columns/actions (a stale games row has a game id, not a player id).
+  const fresh = data.kind === tab, rows = fresh ? data.rows : [];
+  const s = stats, cols = COLS[tab], total = fresh ? data.total : 0;
   const gpsPct = s && s.players ? Math.round(s.located_gps / s.players * 100) : 0;
   const maxCity = s ? Math.max(1, ...s.by_city.map((c) => c.players)) : 1;
   const actions = (r) => (
@@ -261,11 +267,11 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
             <table>
               <thead><tr>{cols.map((c, i) => <th key={i} className={c[2] || ''}>{c[0]}</th>)}</tr></thead>
               <tbody>
-                {data.rows.length ? data.rows.map((r) => (
+                {rows.length ? rows.map((r) => (
                   <tr key={r.id} className={r.disqualified ? 'dq' : ''}>
                     {cols.map((c, i) => <td key={i} className={c[2] || ''}>{c[1] ? c[1](r) : actions(r)}</td>)}
                   </tr>
-                )) : <tr><td className="empty" colSpan={cols.length}>{q ? 'No matches.' : 'Nothing here yet.'}</td></tr>}
+                )) : <tr><td className="empty" colSpan={cols.length}>{!fresh ? 'Loading…' : q ? 'No matches.' : 'Nothing here yet.'}</td></tr>}
               </tbody>
             </table>
           </div>

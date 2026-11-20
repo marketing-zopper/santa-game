@@ -49,7 +49,7 @@ const stamp = Date.now().toString(36);
 const users = [];
 async function makeUser(label, name) {
   const email = `ssc-test-${label}-${stamp}@example.test`, password = `Pw-${stamp}-${Math.random().toString(36).slice(2)}!`;
-  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: name, email_verified: true } });
+  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: { provider: 'google', providers: ['google'] }, user_metadata: { full_name: name, email_verified: true } });
   if (error) throw error;
   users.push(data.user.id);
   const c = createClient(URL_, ANON, opts);
@@ -76,9 +76,9 @@ try {
   // ---------- signed-in player ----------
   const p = await makeUser('player', 'Priya Test Sharma');
   const { data: prof } = await admin.from('profiles').select('*').eq('id', p.id).single();
-  check('profile row auto-created for a new Auth user', prof?.display_name === 'Priya Test Sharma' && prof.email_verified === true, JSON.stringify(prof));
+  check('profile row auto-created for a new Auth user', prof?.display_name === 'Priya Test Sharma', JSON.stringify(prof));
   const { data: tp, error: tpErr } = await p.client.rpc('touch_profile');
-  check('touch_profile works for a signed-in user', !tpErr && tp?.best === 0 && tp?.rank == null, JSON.stringify(tpErr || tp));
+  check('touch_profile works for a signed-in user and marks a Google identity verified', !tpErr && tp?.best === 0 && tp?.rank == null && tp?.verified === true, JSON.stringify(tpErr || tp));
 
   const own = await p.client.from('profiles').select('id,best_score').eq('id', p.id);
   check('player can read their own profile', own.data?.length === 1);
@@ -159,7 +159,7 @@ try {
   const gl = await fn('admin', p.token, null, { method: 'GET', qs: `?action=games&player=${p.id}` });
   check('admin games list filters by player', gl.status === 200 && gl.j.rows.every((r) => r.player_id === p.id) && gl.j.total >= 1, JSON.stringify(gl).slice(0, 200));
   const csv = await fn('admin', p.token, null, { method: 'GET', qs: '?action=export&type=players' });
-  check('admin CSV export works and has a header row', csv.status === 200 && /^﻿?id,/.test(csv.text), csv.text.slice(0, 80));
+  check('admin CSV export works and has a readable header row', csv.status === 200 && /^display_name,email,/.test(csv.text), csv.text.slice(0, 80));   // (fetch strips the UTF-8 BOM)
   check('CSV export does not include private notes / user agents', !/,notes|user_agent/.test(csv.text.split('\n')[0]));
   const dq = await fn('admin', p.token, { id: other.id, value: true }, { qs: '?action=disqualify' });
   check('admin can disqualify a player', dq.status === 200 && dq.j.disqualified === true, JSON.stringify(dq));
@@ -167,6 +167,23 @@ try {
   check('admin API rejects unknown actions (400)', (await fn('admin', p.token, null, { method: 'GET', qs: '?action=nope' })).status === 400);
   const h = await fn('admin', p.token, null, { method: 'GET', qs: '?action=health' });
   check('admin health reports email provider status without secrets', h.status === 200 && !/key|pass/i.test(JSON.stringify(h.j)), JSON.stringify(h));
+  // ---------- accounts that did NOT come through Google (email/password) ----------
+  {
+    const email = `ssc-test-pw-${stamp}@example.test`, password = `Pw-${stamp}-x!`;
+    const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: 'Password Person', email_verified: true } });
+    if (error) throw error; users.push(data.user.id);
+    const c = createClient(URL_, ANON, opts); const { data: sess } = await c.auth.signInWithPassword({ email, password });
+    const tok = sess.session.access_token;
+    const tp = await c.rpc('touch_profile');
+    check('a non-Google (email/password) account is never "verified"', tp.data?.verified === false, JSON.stringify(tp));
+    const st = await fn('start-game', tok, {});
+    check('a non-Google account cannot start a game (403)', st.status === 403, JSON.stringify(st));
+    const lb2 = await c.rpc('get_leaderboard');
+    check('a non-Google account gets no leaderboard data', !lb2.data, JSON.stringify(lb2.data));
+    await admin.from('admin_users').insert({ email });
+    const ad = await fn('admin', tok, null, { method: 'GET', qs: '?action=stats' });
+    check('a non-Google account cannot use the admin API even if its email is allow-listed (403)', ad.status === 403, JSON.stringify(ad));
+  }
 } catch (e) {
   fail++; console.error('FATAL', e);
 } finally {

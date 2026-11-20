@@ -8,14 +8,13 @@
 //   GET  ?action=health                                          (which optional integrations are configured)
 //   POST ?action=disqualify  { id, value: true|false }
 //   POST ?action=test-email  { to }                              (sends a sample thank-you email)
-import { handler, json, serviceClient, requireUser, readJson, HttpError, corsHeaders, isUuid } from '../_shared/common.js';
+import { handler, json, serviceClient, requireUser, readJson, HttpError, corsHeaders, isUuid, isGoogleVerified } from '../_shared/common.js';
 import { emailConfig, emailConfigured, sendEmail, thanksEmail } from '../_shared/email.js';
 
 async function requireAdmin(req, db) {
   const user = await requireUser(req, db);
   const email = String(user.email || '').toLowerCase();
-  const verified = !!(user.user_metadata?.email_verified ?? user.email_confirmed_at);
-  if (!email || !verified) throw new HttpError(403, 'This account is not allowed to open the admin dashboard.');
+  if (!email || !isGoogleVerified(user)) throw new HttpError(403, 'This account is not allowed to open the admin dashboard.');
   const { data, error } = await db.from('admin_users').select('email').eq('email', email).maybeSingle();
   if (error) throw error;
   if (!data) throw new HttpError(403, 'This account is not allowed to open the admin dashboard.');
@@ -39,9 +38,15 @@ async function list(db, kind, u, all) {
   return data;
 }
 
-function csv(rows) {
-  if (!rows.length) return '';
-  const cols = Object.keys(rows[0]);
+// Column order of each CSV export (the database returns JSON objects, whose key order is not meaningful).
+const CSV_COLUMNS = {
+  leaderboard: ['rank', 'official_rank', 'display_name', 'email', 'email_verified', 'best_score', 'best_at', 'games_played', 'total_score', 'city', 'region', 'country', 'lat', 'lng', 'location_source', 'created_at', 'last_seen_at', 'disqualified', 'id'],
+  players: ['display_name', 'email', 'email_verified', 'created_at', 'last_seen_at', 'best_score', 'best_at', 'rank', 'games_played', 'total_score', 'city', 'region', 'country', 'ip_city', 'ip_region', 'lat', 'lng', 'location_accuracy_m', 'location_source', 'thanks_sent_at', 'disqualified', 'consent_at', 'id'],
+  games: ['created_at', 'display_name', 'email', 'score', 'client_score', 'duration_s', 'phones_caught', 'flagged', 'flag_reason', 'city', 'ip_city', 'lat', 'lng', 'email_verified', 'player_id', 'id'],
+};
+
+function csv(rows, cols) {
+  if (!rows.length) return cols.join(',');
   const cell = (v) => {
     if (v == null) return '';
     let s = String(v);
@@ -93,7 +98,7 @@ Deno.serve(handler(['GET', 'POST'], async (req) => {
     if (!['leaderboard', 'players', 'games'].includes(type)) throw new HttpError(400, 'Unknown export');
     const { rows } = await list(db, type, u, true);
     const stamp = new Date().toISOString().slice(0, 10);
-    return new Response('\uFEFF' + csv(rows), {
+    return new Response('\uFEFF' + csv(rows, CSV_COLUMNS[type]), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="santa-safe-catch-${type}-${stamp}.csv"`, 'Cache-Control': 'no-store' },
     });

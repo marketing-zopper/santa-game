@@ -64,6 +64,13 @@ export function handler(methods, fn) {
   };
 }
 
+/** Signed in through Google (not an email/password account) with a verified email. Mirrors public.is_google_verified(). */
+export function isGoogleVerified(user) {
+  const app = user.app_metadata || {};
+  const google = app.provider === 'google' || (Array.isArray(app.providers) && app.providers.includes('google'));
+  return google && !!(user.user_metadata?.email_verified ?? user.email_confirmed_at);
+}
+
 export const clip = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
 export const num = (v, lo, hi) => { const x = Number(v); return Number.isFinite(x) && x >= lo && x <= hi ? x : null; };
 export const isUuid = (v) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v);

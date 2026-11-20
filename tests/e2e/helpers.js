@@ -1,11 +1,19 @@
 // Shared helpers for the browser tests.
 import { createClient } from '@supabase/supabase-js';
 
-export const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://fyjovgxvyuynlgjjucut.supabase.co';
-export const ANON_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_VRzQXLu7JWjWfZ7nctA34g_aM_neNdE';
+// Config comes from the environment / .env.local — nothing project-specific is hardcoded here.
+try { process.loadEnvFile('.env.local'); } catch (e) { /* no .env.local: rely on the shell environment */ }
+export const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+export const ANON_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 export const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-export const STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
+export const STORAGE_KEY = SUPABASE_URL ? `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token` : 'sb-unconfigured-auth-token';
 const opts = { auth: { persistSession: false, autoRefreshToken: false } };
+
+/** Game Home is showing AND the loading screen has finished fading out (it would otherwise swallow clicks). */
+export async function homeReady(page, timeout = 25_000) {
+  await page.waitForSelector('#startScreen', { timeout });
+  await page.waitForSelector('#loader', { state: 'detached', timeout });
+}
 
 /** Walk Loading → Intro → Entry Mode and choose Guest. Ends on Game Home. */
 export async function enterAsGuest(page) {
@@ -14,7 +22,7 @@ export async function enterAsGuest(page) {
   await page.click('#introContinue');
   await page.waitForSelector('#entrySheet');
   await page.click('#guestBtn');
-  await page.waitForSelector('#startScreen');
+  await homeReady(page);
 }
 
 /** The Play button pulses forever, so Playwright never sees it as "stable": force the click. */
@@ -47,7 +55,7 @@ export async function makeTestUser(label, fullName) {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, opts);
   const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const email = `ssc-e2e-${label}-${stamp}@example.test`, password = `Pw-${stamp}!`;
-  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: fullName, email_verified: true } });
+  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: { provider: 'google', providers: ['google'] }, user_metadata: { full_name: fullName, email_verified: true } });
   if (error) throw error;
   const anon = createClient(SUPABASE_URL, ANON_KEY, opts);
   const { data: s, error: e2 } = await anon.auth.signInWithPassword({ email, password });
@@ -60,5 +68,8 @@ export async function makeTestUser(label, fullName) {
 
 /** Put the user's session into localStorage before the app loads (what a returning visitor already has). */
 export async function injectSession(context, session) {
-  await context.addInitScript(([key, value]) => { try { localStorage.setItem(key, value); } catch (e) { /* ignore */ } }, [STORAGE_KEY, JSON.stringify(session)]);
+  // one-shot per tab: otherwise a reload after "sign out" would put the session straight back
+  await context.addInitScript(([key, value]) => {
+    try { if (!sessionStorage.getItem('__e2e_injected')) { localStorage.setItem(key, value); sessionStorage.setItem('__e2e_injected', '1'); } } catch (e) { /* ignore */ }
+  }, [STORAGE_KEY, JSON.stringify(session)]);
 }

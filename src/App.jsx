@@ -214,13 +214,14 @@ function GameApp() {
           onMute={toggleMute} onChip={onChip} />
       ) : null}
 
-      {sheet === 'how' ? <HowToPlaySheet onClose={closeSheet} /> : null}
-      {sheet === 'leader' && signedIn ? <LeaderboardSheet onClose={closeSheet} /> : null}
-
       {stage === 'paused' ? <PauseScreen onResume={() => gameRef.current && gameRef.current.resume()} onQuit={() => gameRef.current && gameRef.current.quit()} /> : null}
       {stage === 'results' && round && mode ? (
         <ResultsScreen mode={mode} round={round} onAgain={startRound} onHome={goHome} onLeaderboard={() => signedIn && setSheet('leader')} />
       ) : null}
+
+      {/* sheets come AFTER the full-screen overlays so they stack on top (the Leaderboard opens from Results) */}
+      {sheet === 'how' ? <HowToPlaySheet onClose={closeSheet} /> : null}
+      {sheet === 'leader' && signedIn ? <LeaderboardSheet onClose={closeSheet} /> : null}
 
       {!loaderGone ? <LoadingScreen authReady={auth.ready} onReveal={reveal} onGone={() => setLoaderGone(true)} /> : null}
       <div id="rotate"><p>Turn your phone upright to play</p></div>
