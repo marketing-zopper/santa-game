@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.vercel
+.DS_Store
+# secrets / local config — never commit
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+*.local
+# test output
+playwright-report/
+test-results/
+.tmp/

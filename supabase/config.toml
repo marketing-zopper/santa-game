@@ -1,0 +1,16 @@
+# Supabase CLI config for Santa's Safe Catch.
+# Edge Functions verify the caller's JWT themselves (auth.getUser) so they work with any JWT signing key,
+# hence verify_jwt = false. Each function rejects requests without a valid signed-in user.
+project_id = "fyjovgxvyuynlgjjucut"
+
+[functions.start-game]
+verify_jwt = false
+entrypoint = "./functions/start-game/index.js"
+
+[functions.finish-game]
+verify_jwt = false
+entrypoint = "./functions/finish-game/index.js"
+
+[functions.admin]
+verify_jwt = false
+entrypoint = "./functions/admin/index.js"
