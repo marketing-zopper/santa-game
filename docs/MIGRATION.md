@@ -103,13 +103,14 @@ A **valid stored session skips steps 3–4** (the original also skipped the intr
 6. Location is requested once on Game Home for signed-in players (the original asked at sign-up). Guests are never asked.
 7. Contact details: winners are contacted via their Google email (no mobile number is collected any more).
 8. Dead code not ported: the unused `hills()/cottage()/tree()` canvas helpers and `dr()` RNG, the unreferenced `santa-*-transparent.png` files, `engine.tier` sound is kept.
-9. `lb-list li.me` CSS exists in the original but was never applied; it still isn't.
+9. **Gameplay change (requested after the migration): catch zone +10%** — `CATCH_HALF` 34 → 37.4 (overall width 68 → 74.8) in the shared engine, so browser and server validation agree. Santa and his sack are also drawn 12% larger (visual only). The parity tests now compare against the original engine with exactly this one constant patched.
+10. `lb-list li.me` CSS exists in the original but was never applied; it still isn't.
 
 ## 7. Verification
 
 | Suite | Result |
 |---|---|
-| Engine parity (Vitest, 41 tests): original `engine.js` run on 8 seeds → golden fixtures; migrated engine must match scores, catches, durations, mid-game world state (ticks 300/1200/3000), all constants and difficulty curves; browser and server import the same module | **41 / 41 pass** |
+| Engine parity (Vitest, 42 tests): original `engine.js` (with only CATCH_HALF patched to 37.4) run on 8 seeds → golden fixtures; migrated engine must match scores, catches, durations, mid-game world state (ticks 300/1200/3000), all constants and difficulty curves; browser and server import the same module | **42 / 42 pass** |
 | Live backend (`scripts/verify-backend.mjs`, 54 checks): guest lock-out, RLS, no score writes, server-computed score wins, tamper flag, retry idempotence, faster-than-real-time flag, ownership, input validation, rate limit, leaderboard privacy, admin authz/search/CSV/disqualify, non-Google accounts | **54 / 54 pass** |
 | Browser (Playwright, real Chrome, mobile viewport + touch): 32 tests — details below | **32 / 32 pass** |
 | Visual parity vs the running original (390×844 @2×, animations frozen, canvas hidden → DOM/CSS only): Introduction, intro action bar, Game Home, How to play, Pause, Results promo card | **0.000 % pixels differ** |

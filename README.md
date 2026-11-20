@@ -196,7 +196,7 @@ update or delete anywhere. `anon` (guests) can do nothing at all. The leaderboar
 
 | Suite | Command | Needs |
 |---|---|---|
-| Engine parity (41): same scores / state / constants as the **original** engine via golden fixtures | `npm test` | nothing |
+| Engine parity (42): same scores / state / constants as the **original** engine via golden fixtures | `npm test` | nothing |
 | Live backend (54): RLS, tamper, retry, rate limit, leaderboard privacy, admin authz | `npm run verify:backend` | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
 | Browser (Playwright, real Chrome): guest, signed-in, admin, responsive | `npm run test:e2e` | Chrome; signed-in/admin specs also need `SUPABASE_SERVICE_ROLE_KEY` (else skipped) |
 

@@ -3,14 +3,15 @@
  * SINGLE SOURCE OF TRUTH. This exact file is imported by:
  *   - the React game (src/game/engine.js re-exports it), and
  *   - the Supabase Edge Function that re-plays and validates every signed-in score (finish-game).
- * The game logic below is the original engine.js, unchanged — only the module wrapper (export keywords) differs.
+ * The game logic below is the original engine.js — only the module wrapper (export keywords) differs, plus ONE deliberate
+ * rule change: CATCH_HALF 34 -> 37.4 (catch zone 10% wider, requested after the migration). Everything else is original.
  * Do not edit the rules here without understanding that it changes score validation too.
  */
 export const CFG = {
   W: 400, H: 720,
   SPAWN_Y: -20, CATCH_Y: 620, GROUND_Y: 700,
   SLEIGH_SPEED: 480,      // max sleigh speed (units/s) — the hard physical limit
-  CATCH_HALF: 34,         // half-width of the sack opening
+  CATCH_HALF: 37.4,       // half-width of the sack opening (ORIGINAL VALUE WAS 34; deliberately widened 10% — overall catch width 68 -> 74.8)
   X_MIN: 34, X_MAX: 366,
   LIVES: 3, MAX_LIVES: 3,
   // difficulty curve (t = seconds survived)
