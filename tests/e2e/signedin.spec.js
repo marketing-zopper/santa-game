@@ -168,22 +168,27 @@ test('signed-out visitor cannot reach leaderboard data (RPC refuses)', async ({ 
   expect([401, 403]).toContain(status);
 });
 
-test.describe('legacy Google player (history is preserved, no region invented)', () => {
-  test('a valid legacy Google session still restores to Game Home; their games carry no region', async ({ page, context }) => {
-    const legacy = await makeTestUser('legacy', 'Legacy Googler', { kind: 'google' });
+test.describe('Google is for the admin dashboard only', () => {
+  test('a leftover Google session in the browser is IGNORED by the game: treated as signed out, nothing created, nothing signed out', async ({ page, context }) => {
+    const g = await makeTestUser('googleonly', 'Admin Like Google', { kind: 'google' });
     try {
-      await injectSession(context, legacy.session);
+      await injectSession(context, g.session);
       await page.goto('/');
+      await page.waitForSelector('#introScreen', { timeout: 25_000 });                 // a normal new visitor: intro, not Game Home
+      await expect(page.locator('#startScreen')).toHaveCount(0);
+      await page.click('#introContinue');
+      await page.waitForSelector('#entrySheet');
+      await expect(page.locator('#signInBtn')).toHaveText('Sign In with OTP');
+      await expect(page.locator('#googleBtn')).toHaveCount(0);
+      expect(await page.locator('body').innerText()).not.toMatch(/google/i);
+      // the game never created a player profile for the Google account, and did not touch the stored session (the admin may still need it)
+      expect((await g.admin.from('profiles').select('id').eq('id', g.id).maybeSingle()).data).toBeNull();
+      expect(await page.evaluate((k) => !!localStorage.getItem(k), STORAGE_KEY)).toBe(true);
+      // guests can still play normally in that same browser
+      await page.click('#guestBtn');
       await homeReady(page);
-      await expect(page.locator('#playerName')).toHaveText('Legacy Googler');
-      await expect(page.locator('#leaderBtn')).toBeVisible();
-      await playRound(page);
-      await expect(page.locator('#result')).toContainText('Your best:', { timeout: 20_000 });
-      const g = (await legacy.admin.from('games').select('region').eq('player_id', legacy.id)).data;
-      expect(g).toHaveLength(1);
-      expect(g[0].region).toBeNull();
-      const pr = (await legacy.admin.from('profiles').select('region, auth_provider').eq('id', legacy.id).single()).data;
-      expect(pr).toEqual({ region: null, auth_provider: 'google' });
-    } finally { await legacy.cleanup(); }
+      await expect(page.locator('#leaderBtn')).toHaveCount(0);
+      await expect(page.locator('#playerName')).toHaveText('Guest');
+    } finally { await g.cleanup(); }
   });
 });

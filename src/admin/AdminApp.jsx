@@ -1,7 +1,8 @@
 // Admin dashboard (React port of the original admin.html — same panels, tabs, filters, CSV export and disqualify action).
 //
-// Authorisation is no longer a shared password: you sign in with Google (Supabase Auth) and the `admin` Edge Function
-// only answers accounts whose verified email is listed in public.admin_users. Everything is re-checked on the server.
+// This is the ONLY place Google sign-in exists. Players never see it (they sign in with a WhatsApp OTP in the game).
+// A verified Google account whose email is listed in public.admin_users (exactly one admin) is let in by the `admin`
+// Edge Function; everything is re-checked on the server.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase, SUPABASE_URL, SUPABASE_KEY } from '../lib/supabase.js';
 import { REGIONS } from '../lib/regions.js';
@@ -47,7 +48,7 @@ function LoginCard({ error }) {
     <section id="login">
       <div className="login-card">
         <h1>Santa's Safe Catch<br />Admin</h1>
-        <p>Sign in with the Google account that has been given admin access.</p>
+        <p>Admin sign-in with the authorised Google account. (Players sign in from the game with a WhatsApp OTP.)</p>
         {err ? <p className="err">{err}</p> : null}
         <button className="btn" onClick={go} disabled={busy}><GoogleDot />{busy ? 'Opening Google…' : 'Sign in with Google'}</button>
       </div>
@@ -62,7 +63,7 @@ function NoAccess({ email, message, onSignOut }) {
         <h1>No admin access</h1>
         <p className="who">{email}</p>
         <p>{message}</p>
-        <p>Ask an existing admin to add this email to <b>admin_users</b>, or sign in with a different account.</p>
+        <p>Sign out and sign in with the authorised admin Google account.</p>
         <button className="btn" onClick={onSignOut}>Sign out</button>
       </div>
     </section>
@@ -351,7 +352,7 @@ export default function AdminApp() {
   if (session === undefined) return <section id="login"><div className="login-card"><p>Loading…</p></div></section>;
   if (!session) return <LoginCard />;
   if (access.state === 'checking') return <section id="login"><div className="login-card"><p>Checking access…</p></div></section>;
-  if (access.state === 'denied') return <NoAccess email={session.user.email} message={access.message} onSignOut={signOut} />;
-  if (access.state === 'error') return <NoAccess email={session.user.email} message={`Couldn't reach the server: ${access.message}`} onSignOut={signOut} />;
+  if (access.state === 'denied') return <NoAccess email={session.user.email || (session.user.phone ? '+' + session.user.phone : '')} message={access.message} onSignOut={signOut} />;
+  if (access.state === 'error') return <NoAccess email={session.user.email || (session.user.phone ? '+' + session.user.phone : '')} message={`Couldn't reach the server: ${access.message}`} onSignOut={signOut} />;
   return <Dashboard email={access.email} onSignOut={signOut} onAuthLost={(m) => setAccess({ state: 'denied', message: m })} />;
 }

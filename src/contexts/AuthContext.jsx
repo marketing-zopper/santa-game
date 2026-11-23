@@ -8,8 +8,8 @@
 //   profile:  { name, region, best, rank, total, … } from the database (touch_profile), null for guests / signed-out
 //
 // Guests are NOT represented here at all: they never authenticate and never get a profile.
-// (Historical Google players who still hold a valid session keep working as "signedIn" legacy players; there is no
-//  player-facing Google sign-in any more.)
+// Only PHONE (WhatsApp OTP) sessions count as players. Any other session in the browser — e.g. the admin's Google session,
+// which shares the same storage — is simply ignored here (not signed out, not touched): the game treats it as signed out.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { touchProfile } from '../services/gameService.js';
@@ -19,7 +19,8 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null);
+  const [rawSession, setSession] = useState(null);
+  const session = rawSession && rawSession.user && rawSession.user.phone ? rawSession : null;   // players are phone accounts only
   const [resolved, setResolved] = useState(!supabase);       // session lookup finished
   const [profile, setProfile] = useState(null);
   const [profileDone, setProfileDone] = useState(!supabase); // profile fetch attempted for the current user

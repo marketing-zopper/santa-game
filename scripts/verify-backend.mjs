@@ -47,7 +47,7 @@ const catcher = (sim) => {
 
 const stamp = Date.now().toString(36);
 const users = [];
-async function makeUser(label, name) {
+async function makeGoogle(label, name) {
   const email = `ssc-test-${label}-${stamp}@example.test`, password = `Pw-${stamp}-${Math.random().toString(36).slice(2)}!`;
   const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: { provider: 'google', providers: ['google'] }, user_metadata: { full_name: name, email_verified: true } });
   if (error) throw error;
@@ -56,6 +56,20 @@ async function makeUser(label, name) {
   const { data: s, error: e2 } = await c.auth.signInWithPassword({ email, password });
   if (e2) throw e2;
   return { id: data.user.id, email, client: c, token: s.session.access_token };
+}
+/** A verified phone player who has completed registration (what every real player is). */
+async function makePlayer(label, name, region = 'Croma East Region') {
+  const num = '91' + String(6 + Math.floor(Math.random() * 4)) + String(Math.floor(Math.random() * 1e9)).padStart(9, '0');
+  const password = `Pw-${stamp}-${Math.random().toString(36).slice(2)}!`;
+  const { data, error } = await admin.auth.admin.createUser({ phone: num, phone_confirm: true, password });
+  if (error) throw error;
+  users.push(data.user.id);
+  const c = createClient(URL_, ANON, opts);
+  const { data: s, error: e2 } = await c.auth.signInWithPassword({ phone: '+' + num, password });
+  if (e2) throw e2;
+  const { error: e3 } = await c.rpc('complete_registration', { p_name: name, p_region: region });
+  if (e3) throw e3;
+  return { id: data.user.id, phone: '+' + num, client: c, token: s.session.access_token };
 }
 
 try {
@@ -74,11 +88,25 @@ try {
   check('admin rejects a request with no token', (await fn('admin', null, null, { method: 'GET', qs: '?action=stats' })).status === 401);
 
   // ---------- signed-in player ----------
-  const p = await makeUser('player', 'Priya Test Sharma');
+  const p = await makePlayer('player', 'Priya Test Sharma', 'Croma East Region');
   const { data: prof } = await admin.from('profiles').select('*').eq('id', p.id).single();
-  check('profile row auto-created for a new Auth user', prof?.display_name === 'Priya Test Sharma', JSON.stringify(prof));
+  check('registered phone player has a profile (name, region, phone, provider)', prof?.display_name === 'Priya Test Sharma' && prof.region === 'Croma East Region' && prof.phone === p.phone && prof.auth_provider === 'phone' && prof.verified === true, JSON.stringify(prof));
   const { data: tp, error: tpErr } = await p.client.rpc('touch_profile');
-  check('touch_profile works for a signed-in user and marks a Google identity verified', !tpErr && tp?.best === 0 && tp?.rank == null && tp?.verified === true, JSON.stringify(tpErr || tp));
+  check('touch_profile works for a registered phone player', !tpErr && tp?.registered === true && tp?.best === 0 && tp?.rank == null && tp?.verified === true && tp?.region === 'Croma East Region', JSON.stringify(tpErr || tp));
+
+  // ---------- Google accounts exist for the admin dashboard ONLY ----------
+  const adm = await makeGoogle('admin', 'Admin Test');
+  check('a Google account gets NO player profile (the auth trigger is gone)', !(await admin.from('profiles').select('id').eq('id', adm.id).maybeSingle()).data);
+  const gtp = await adm.client.rpc('touch_profile');
+  check('touch_profile for a Google account creates nothing and reports "not a player"', gtp.data?.registered === false && gtp.data?.player === false && !(await admin.from('profiles').select('id').eq('id', adm.id).maybeSingle()).data, JSON.stringify(gtp));
+  check('a Google account cannot start a game (403)', (await fn('start-game', adm.token, {})).status === 403);
+  check('a Google account gets no leaderboard data', !(await adm.client.rpc('get_leaderboard')).data);
+  check('a Google account cannot register as a player (complete_registration)', /phone_not_verified/.test((await adm.client.rpc('complete_registration', { p_name: 'Priya X', p_region: 'Croma East Region' })).error?.message || ''));
+  // a HISTORICAL Google player (profile kept for the record) can no longer start games
+  const oldG = await makeGoogle('oldgoogle', 'Old Googler');
+  await admin.from('profiles').insert({ id: oldG.id, display_name: 'Old Googler', email: oldG.email, verified: true, auth_provider: 'google', best_score: 100, best_at: new Date().toISOString() });
+  check('a historical Google player cannot start new games (403) — history is kept, play needs a phone sign-in', (await fn('start-game', oldG.token, {})).status === 403);
+  check('...and cannot read the in-game leaderboard', !(await oldG.client.rpc('get_leaderboard')).data);
 
   const own = await p.client.from('profiles').select('id,best_score').eq('id', p.id);
   check('player can read their own profile', own.data?.length === 1);
@@ -121,7 +149,7 @@ try {
   check('a flagged game does not change the personal best', fin2.j.best === game.score, JSON.stringify(fin2));
 
   // 4) someone else cannot finish my session; garbage payloads rejected
-  const other = await makeUser('other', 'Other Person');
+  const other = await makePlayer('other', 'Other Person', 'Croma West Region');
   const st3 = await fn('start-game', p.token, {});
   const steal = await fn('finish-game', other.token, { sessionId: st3.j.sessionId, inputs: [], endTick: 10 });
   check("another user cannot finish my session (404)", steal.status === 404, JSON.stringify(steal));
@@ -147,27 +175,27 @@ try {
   // ---------- admin ----------
   const as = await fn('admin', p.token, null, { method: 'GET', qs: '?action=stats' });
   check('a non-admin player is refused by the admin API (403)', as.status === 403, JSON.stringify(as));
-  await admin.from('admin_users').insert({ email: p.email.toLowerCase() });
-  const stats = await fn('admin', p.token, null, { method: 'GET', qs: '?action=stats' });
+  await admin.from('admin_users').insert({ email: adm.email.toLowerCase() });
+  const stats = await fn('admin', adm.token, null, { method: 'GET', qs: '?action=stats' });
   check('an allow-listed admin gets stats', stats.status === 200 && typeof stats.j?.players === 'number', JSON.stringify(stats));
   for (const k of ['leaderboard', 'players', 'games']) {
-    const r = await fn('admin', p.token, null, { method: 'GET', qs: `?action=${k}&limit=5` });
+    const r = await fn('admin', adm.token, null, { method: 'GET', qs: `?action=${k}&limit=5` });
     check(`admin list: ${k}`, r.status === 200 && Array.isArray(r.j?.rows), JSON.stringify(r).slice(0, 200));
   }
-  const srch = await fn('admin', p.token, null, { method: 'GET', qs: '?action=players&q=' + encodeURIComponent('Priya%') });
+  const srch = await fn('admin', adm.token, null, { method: 'GET', qs: '?action=players&q=' + encodeURIComponent('Priya%') });
   check('admin search escapes % / _ wildcards (no false matches)', srch.status === 200 && srch.j.total === 0, JSON.stringify(srch).slice(0, 200));
-  const srch2 = await fn('admin', p.token, null, { method: 'GET', qs: '?action=players&q=priya' });
+  const srch2 = await fn('admin', adm.token, null, { method: 'GET', qs: '?action=players&q=priya' });
   check('admin search finds the player by name', srch2.status === 200 && srch2.j.total >= 1);
-  const gl = await fn('admin', p.token, null, { method: 'GET', qs: `?action=games&player=${p.id}` });
+  const gl = await fn('admin', adm.token, null, { method: 'GET', qs: `?action=games&player=${p.id}` });
   check('admin games list filters by player', gl.status === 200 && gl.j.rows.every((r) => r.player_id === p.id) && gl.j.total >= 1, JSON.stringify(gl).slice(0, 200));
-  const csv = await fn('admin', p.token, null, { method: 'GET', qs: '?action=export&type=players' });
+  const csv = await fn('admin', adm.token, null, { method: 'GET', qs: '?action=export&type=players' });
   check('admin CSV export works and has a readable header row', csv.status === 200 && /^display_name,phone,email,region,/.test(csv.text), csv.text.slice(0, 80));   // (fetch strips the UTF-8 BOM)
   check('CSV export does not include private notes / user agents', !/,notes|user_agent/.test(csv.text.split('\n')[0]));
-  const dq = await fn('admin', p.token, { id: other.id, value: true }, { qs: '?action=disqualify' });
+  const dq = await fn('admin', adm.token, { id: other.id, value: true }, { qs: '?action=disqualify' });
   check('admin can disqualify a player', dq.status === 200 && dq.j.disqualified === true, JSON.stringify(dq));
-  await fn('admin', p.token, { id: other.id, value: false }, { qs: '?action=disqualify' });
-  check('admin API rejects unknown actions (400)', (await fn('admin', p.token, null, { method: 'GET', qs: '?action=nope' })).status === 400);
-  const h = await fn('admin', p.token, null, { method: 'GET', qs: '?action=health' });
+  await fn('admin', adm.token, { id: other.id, value: false }, { qs: '?action=disqualify' });
+  check('admin API rejects unknown actions (400)', (await fn('admin', adm.token, null, { method: 'GET', qs: '?action=nope' })).status === 400);
+  const h = await fn('admin', adm.token, null, { method: 'GET', qs: '?action=health' });
   check('admin health reports email provider status without secrets', h.status === 200 && !/key|pass/i.test(JSON.stringify(h.j)), JSON.stringify(h));
   // ---------- WhatsApp-OTP (phone) players, Croma regions, admin region reporting ----------
   {
@@ -198,8 +226,7 @@ try {
       const r = await ph.client.rpc('complete_registration', { p_name: name, p_region: region });
       check(`registration rejects ${label}`, !!r.error && want.test(r.error.message), JSON.stringify(r.error));
     }
-    check('a Google (non-phone) account cannot use complete_registration', /phone_not_verified/.test((await p.client.rpc('complete_registration', { p_name: 'Priya X', p_region: 'Croma East Region' })).error?.message || ''));
-    check('guests cannot call complete_registration', !!(await createClient(URL_, ANON, opts).rpc('complete_registration', { p_name: 'Asha Verma', p_region: 'Croma East Region' })).error);
+        check('guests cannot call complete_registration', !!(await createClient(URL_, ANON, opts).rpc('complete_registration', { p_name: 'Asha Verma', p_region: 'Croma East Region' })).error);
 
     const reg = await ph.client.rpc('complete_registration', { p_name: '  Asha   Verma ', p_region: 'Croma South Region' });
     check('registration creates the profile (name tidied, region, phone from the verified record)', !reg.error && reg.data?.name === 'Asha Verma' && reg.data?.region === 'Croma South Region' && reg.data?.phone === ph.e164 && reg.data?.existing === false && reg.data?.auth_provider === 'phone' && reg.data?.verified === true, JSON.stringify(reg));
@@ -238,15 +265,15 @@ try {
     await admin.from('profiles').update({ region: 'Croma South Region' }).eq('id', ph.id);
 
     // legacy Google players keep a NULL region (nothing invented)
-    const legacy = (await admin.from('profiles').select('region, auth_provider').eq('id', p.id).single()).data;
-    check('a Google (legacy) player has no region and is not given one', legacy.region === null && legacy.auth_provider === 'google', JSON.stringify(legacy));
+    const legacyRows = (await admin.from('profiles').select('region, auth_provider').eq('auth_provider', 'google')).data;
+    check('historical Google players keep a NULL region (none was invented)', legacyRows.length >= 1 && legacyRows.every((r) => r.region === null), JSON.stringify(legacyRows));
 
     // admin: region filter, report, CSV
-    const ad = (qs) => fn('admin', p.token, null, { method: 'GET', qs });
+    const ad = (qs) => fn('admin', adm.token, null, { method: 'GET', qs });
     const byReg = await ad('?action=players&region=' + encodeURIComponent('Croma South Region'));
     check('admin players filtered by region', byReg.status === 200 && byReg.j.rows.length >= 1 && byReg.j.rows.every((r) => r.region === 'Croma South Region') && byReg.j.rows.some((r) => r.id === ph.id), JSON.stringify(byReg).slice(0, 200));
     const leg = await ad('?action=players&region=legacy');
-    check('admin "legacy" filter lists only players with no region (incl. Google test users)', leg.status === 200 && leg.j.rows.every((r) => r.region === null) && leg.j.rows.some((r) => r.id === p.id) && !leg.j.rows.some((r) => r.id === ph.id));
+    check('admin "legacy" filter lists only players with no region (the historical Google players)', leg.status === 200 && leg.j.rows.every((r) => r.region === null) && leg.j.rows.some((r) => r.auth_provider === 'google') && !leg.j.rows.some((r) => r.id === ph.id));
     check('admin games filtered by the SNAPSHOT region', (await ad('?action=games&region=' + encodeURIComponent('Croma South Region'))).j.rows.some((r) => r.player_id === ph.id));
     check('admin rejects an unknown region (400)', (await ad('?action=players&region=Mars')).status === 400);
     const byPhone = await ad('?action=players&q=' + encodeURIComponent(ph.e164.slice(3, 9)));
@@ -273,7 +300,7 @@ try {
     check('guests cannot call the OTP cap function or read the send log', !!(await createClient(URL_, ANON, opts).rpc('hook_allow_otp', { p_phone: capPhone })).error && !!(await createClient(URL_, ANON, opts).from('otp_sends').select('*')).error);
   }
 
-  // ---------- accounts that did NOT come through Google (email/password) ----------
+  // ---------- email/password accounts (not a phone, not the admin) ----------
   {
     const email = `ssc-test-pw-${stamp}@example.test`, password = `Pw-${stamp}-x!`;
     const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: 'Password Person', email_verified: true } });
@@ -281,20 +308,22 @@ try {
     const c = createClient(URL_, ANON, opts); const { data: sess } = await c.auth.signInWithPassword({ email, password });
     const tok = sess.session.access_token;
     const tp = await c.rpc('touch_profile');
-    check('a non-Google (email/password) account is never "verified"', tp.data?.verified === false, JSON.stringify(tp));
+    check('an email/password account is not a player (touch_profile → registered:false)', tp.data?.registered === false, JSON.stringify(tp));
     const st = await fn('start-game', tok, {});
-    check('a non-Google account cannot start a game (403)', st.status === 403, JSON.stringify(st));
+    check('an email/password account cannot start a game (403)', st.status === 403, JSON.stringify(st));
     const lb2 = await c.rpc('get_leaderboard');
-    check('a non-Google account gets no leaderboard data', !lb2.data, JSON.stringify(lb2.data));
+    check('an email/password account gets no leaderboard data', !lb2.data, JSON.stringify(lb2.data));
     await admin.from('admin_users').insert({ email });
     const ad = await fn('admin', tok, null, { method: 'GET', qs: '?action=stats' });
-    check('a non-Google account cannot use the admin API even if its email is allow-listed (403)', ad.status === 403, JSON.stringify(ad));
+    check('an email/password account cannot use the admin API even if its email is allow-listed (403)', ad.status === 403, JSON.stringify(ad));
   }
 } catch (e) {
   fail++; console.error('FATAL', e);
 } finally {
   for (const id of users) await admin.auth.admin.deleteUser(id);
   await admin.from('admin_users').delete().like('email', 'ssc-test-%');
+  const { data: allow } = await admin.from('admin_users').select('email');
+  check('the admin allow-list is exactly one person: marketingext@zopper.com', allow.length === 1 && allow[0].email === 'marketingext@zopper.com', JSON.stringify(allow));
   console.log(`\n${pass} passed, ${fail} failed (temporary users removed)`);
   process.exit(fail ? 1 : 0);
 }

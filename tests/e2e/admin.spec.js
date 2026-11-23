@@ -7,7 +7,7 @@ test.skip(!SERVICE_KEY, 'set SUPABASE_SERVICE_ROLE_KEY to run the admin tests');
 test.use({ viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
 test.describe.configure({ mode: 'serial' });
 
-let user, phoneUser;
+let user, dataPlayer, legacyUser, phoneUser;   // user = the Google ADMIN (no player profile); dataPlayer = a phone player with a game
 test.beforeAll(async () => {
   // a phone player in the North region with one finished game, so the region views have something to show
   phoneUser = await makeTestUser('regionp', 'Region Player Kumar', { region: 'Croma North Region' });
@@ -16,13 +16,17 @@ test.beforeAll(async () => {
     await phoneUser.admin.from('games').insert({ player_id: phoneUser.id, session_id: s.id, score: 555, client_score: 555, duration_s: 30, phones_caught: 12, flagged: false, region: 'Croma North Region' });
     await phoneUser.admin.from('profiles').update({ best_score: 555, best_at: new Date().toISOString(), games_played: 1, total_score: 555 }).eq('id', phoneUser.id);
   }
-  user = await makeTestUser('admin', 'E2E Admin Person', { kind: 'google' });
-  // give them one finished game so the tables have data
-  const { data: s } = await user.admin.from('game_sessions').insert({ player_id: user.id, seed: 4242 }).select('id').single();
-  await user.admin.from('games').insert({ player_id: user.id, session_id: s.id, score: 321, client_score: 321, duration_s: 20, phones_caught: 9, flagged: false });
-  await user.admin.from('profiles').update({ best_score: 321, best_at: new Date().toISOString(), games_played: 1, total_score: 321, verified: true, city: 'Mumbai', location_source: 'gps', lat: 19.07, lng: 72.87 }).eq('id', user.id);
+  user = await makeTestUser('admin', 'E2E Admin Google', { kind: 'google' });          // Google = admin login only: it never gets a player profile
+  dataPlayer = await makeTestUser('dataplayer', 'E2E Admin Person', { region: 'Croma East Region' });
+  // a historical Google player (kept for the record) — shown as "Legacy" with no region
+  legacyUser = await makeTestUser('legacy', 'E2E Legacy Googler', { kind: 'google' });
+  await legacyUser.admin.from('profiles').insert({ id: legacyUser.id, display_name: 'E2E Legacy Googler', email: legacyUser.email, verified: true, auth_provider: 'google', best_score: 99, best_at: new Date().toISOString() });
+  // give the data player one finished game so the tables have data
+  const { data: s } = await dataPlayer.admin.from('game_sessions').insert({ player_id: dataPlayer.id, seed: 4242, region: 'Croma East Region' }).select('id').single();
+  await dataPlayer.admin.from('games').insert({ player_id: dataPlayer.id, session_id: s.id, region: 'Croma East Region', score: 321, client_score: 321, duration_s: 20, phones_caught: 9, flagged: false });
+  await dataPlayer.admin.from('profiles').update({ best_score: 321, best_at: new Date().toISOString(), games_played: 1, total_score: 321, verified: true, city: 'Mumbai', location_source: 'gps', lat: 19.07, lng: 72.87 }).eq('id', dataPlayer.id);
 });
-test.afterAll(async () => { if (user) await user.cleanup(); if (phoneUser) await phoneUser.cleanup(); });
+test.afterAll(async () => { for (const u of [user, dataPlayer, legacyUser, phoneUser]) if (u) await u.cleanup(); });
 
 test('signed-out visitor sees only the Google sign-in card (no password box)', async ({ page }) => {
   await page.goto('/admin');
@@ -37,6 +41,14 @@ test('a signed-in player who is not an admin is refused', async ({ page, context
   await page.goto('/admin');
   await expect(page.locator('.login-card h1')).toHaveText('No admin access', { timeout: 20_000 });
   await expect(page.locator('#appView')).toHaveCount(0);
+});
+
+test('a real PLAYER (WhatsApp-OTP session) cannot open the admin dashboard', async ({ page, context }) => {
+  await injectSession(context, dataPlayer.session);
+  await page.goto('/admin');
+  await expect(page.locator('.login-card h1')).toHaveText('No admin access', { timeout: 20_000 });
+  await expect(page.locator('#appView')).toHaveCount(0);
+  await expect(page.locator('.login-card .who')).toContainText('+91');                  // shows which account is signed in (their phone)
 });
 
 test('allow-listed admin: KPIs, charts, tabs, search, per-player games, CSV export, disqualify / reinstate', async ({ page, context }) => {
@@ -59,7 +71,7 @@ test('allow-listed admin: KPIs, charts, tabs, search, per-player games, CSV expo
   // search finds by email; wildcard characters are not treated as wildcards
   await page.fill('input[type=search]', '%');
   await expect(page.locator('#dataPanel tbody tr td.empty')).toBeVisible();
-  await page.fill('input[type=search]', user.email.split('@')[0]);
+  await page.fill('input[type=search]', dataPlayer.phone.slice(3, 9));                  // search by phone number
   await expect(row).toHaveCount(1);
 
   // players + games tabs
@@ -133,8 +145,8 @@ test('regions: report panel, region filter on every tab, phone + region columns,
 
   // legacy Google players are shown as "Legacy", never given a region
   await page.getByRole('tab', { name: 'All players' }).click();
-  await page.fill('input[type=search]', 'E2E Admin');
-  await expect(page.locator('#dataPanel tbody tr', { hasText: 'E2E Admin Person' }).locator('.pill', { hasText: 'Legacy' })).toBeVisible();
+  await page.fill('input[type=search]', 'E2E Legacy');
+  await expect(page.locator('#dataPanel tbody tr', { hasText: 'E2E Legacy Googler' }).locator('.pill', { hasText: 'Legacy' })).toBeVisible();
 
   // region-report CSV
   const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('#exportRegions').click()]);

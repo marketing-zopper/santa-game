@@ -1,3 +1,5 @@
+> **Update:** a follow-up change (migration 004) made Google sign-in **admin-only** (`/admin`, one admin: `marketingext@zopper.com`). Google sessions no longer work for players, Google accounts get no profile, and only phone players can play. Decision 1 and the "Admin" row below describe the earlier state.
+
 # WATI WhatsApp-OTP sign-in & Croma region data — change report
 
 Branch `feature/wati-otp-regions` (from `feature/react-supabase-migration`). Targeted update: gameplay, scoring, animations, audio,

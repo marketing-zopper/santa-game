@@ -45,8 +45,10 @@ is never saved, counted or attached to the account**; only games started after s
 - **Postgres + RLS** (profiles, sessions, games, regions) · **Edge Functions** `start-game`, `finish-game`, `admin`, `send-sms`.
 - **Shared form code.** The registration + OTP screen (`src/screens/AuthSheet.jsx`) is a single component used by Entry Mode,
   Game Home and the guest Result screen.
-- Google is **no longer offered to players**. Historical Google players and their scores are kept (`auth_provider = 'google'`,
-  `region = NULL` = "Legacy / unknown"); nothing is merged with phone accounts. Google sign-in remains for the **admin** dashboard only.
+- **Google sign-in exists ONLY on `/admin`**, for exactly one allow-listed admin (`marketingext@zopper.com`). Players never see it; a
+  Google account never gets a player profile and can never play, start a game, or see the leaderboard. Historical Google players
+  and their scores stay in the database as history (`auth_provider = 'google'`, `region = NULL`) and on the leaderboard; they
+  would register with a phone number like anyone else (accounts are never merged automatically).
 
 ## Repository layout
 
@@ -61,7 +63,7 @@ src/
   styles/                 game.css (original), auth.css (original sign-up/OTP rules, restored), entry.css
   admin/                  React admin dashboard
 supabase/
-  migrations/             001 core schema · 002 google-only (superseded in part by 003) · 003 phone auth + regions
+  migrations/             001 core schema · 002 google-only (historical) · 003 phone auth + regions · 004 Google = admin only
   functions/              start-game, finish-game, admin, send-sms, _shared (engine, common, email, phone, regions, wati)
 scripts/                  configure-phone-auth.mjs · test-otp.mjs · verify-backend.mjs
 tests/                    unit (Vitest) + browser (Playwright)
@@ -90,13 +92,14 @@ For the existing project everything below is already applied. For a new project:
    |---|---|
    | `20261120000001_core_schema.sql` | tables, RLS, grants, leaderboard, server functions |
    | `20261120000002_google_only.sql` | historical: "verified" = Google identity |
+   | `20261123000004_google_admin_only.sql` | removes the Google auth trigger (Google accounts never get a profile); only phone players can start games / read the leaderboard; admin allow-list = exactly `marketingext@zopper.com` |
    | `20261123000003_phone_auth_regions.sql` | `regions` (exactly four), phone / region / timestamps on `profiles`, region snapshot on `game_sessions` + `games`, `complete_registration`, region reporting, OTP send cap. **Additive — existing players, scores and games are untouched** (the old GPS "region" column is preserved as `geo_region`) |
 
 2. **Edge Functions** — `npx supabase functions deploy --project-ref <ref> --use-api`
    (`verify_jwt = false` in `supabase/config.toml`: the player/admin functions verify the caller's token themselves; `send-sms`
    verifies Supabase's signature).
 3. **Turn on WhatsApp OTP** — see the next section (one command).
-4. **Auth → URL Configuration** — Site URL = your production URL; add it (and `…/admin` for the admin Google login) to Redirect URLs.
+4. **Auth → URL Configuration** — Site URL = your production URL; add `https://<your-domain>/**` to Redirect URLs (needed for the **admin** Google login to come back to `/admin`).
 5. **Anonymous sign-ins stay OFF** — guests must have no database presence.
 
 ## WhatsApp OTP setup (WATI)
@@ -144,18 +147,24 @@ Registration asks for **Full name**, **Store / Region** (exactly *Croma East / S
 
 - **Snapshot:** the region is copied onto every game *session* and *game* when it is played, so history keeps its original
   attribution even if a profile changes. Players cannot edit their own region or phone (no write access at all).
-- **Legacy:** historical Google players have `region = NULL` and show as "Legacy / unknown". No region is invented.
+- **Legacy:** historical Google players (kept as history) have `region = NULL` and show as "Legacy / unknown". No region is invented.
 - **Reporting** (admin only): per region — registered players, total games, valid games (not flagged), average score, highest
   score — via `admin_region_report()`, the dashboard's **Region-wise performance** panel and its CSV export. Personal best and
   per-player history are in the Players / Games tabs. The **global** leaderboard is unchanged (one board for everyone).
 
 ## Admin dashboard
 
-`/admin` — Google sign-in (admin only), checked server-side against `public.admin_users`. Add the first admin in the SQL editor:
+`/admin` is the **only** place Google sign-in exists. The one admin is **`marketingext@zopper.com`**: that Google account signs in
+and the `admin` Edge Function checks (on every call) that it is a Google-verified account listed in `public.admin_users`
+(migration 004 makes that list exactly this one email). Players — including WhatsApp-OTP players — are refused. No OTP login here.
 
-```sql
-insert into public.admin_users (email) values ('someone@your-company.com');   -- lower-case
-```
+**One-time Google setup (admin login only)** — no credentials live in this repo; the Google client ID/secret are stored only in
+Supabase → Authentication → Providers → Google:
+1. Google Cloud Console → Credentials → OAuth client (Web) → **Authorised redirect URI** `https://<project-ref>.supabase.co/auth/v1/callback`
+   (without it Google answers `redirect_uri_mismatch`), and your site as an authorised JavaScript origin.
+2. Supabase → Authentication → URL Configuration → Redirect URLs includes `https://<your-domain>/**`.
+
+To change the admin later: `update public.admin_users set email = 'new@zopper.com' where true;` (lower-case).
 
 KPIs, per-day charts, players by city, **Region-wise performance**, Leaderboard / All players / Games tabs with **region filter**
 (All · four regions · Legacy), search (name, phone, email, city), verified filter, flagged-only, per-player games, disqualify /
@@ -165,7 +174,7 @@ reinstate, and CSV export (players, games, leaderboard — now with phone + regi
 
 1. Import the repo (framework **Vite**; `vercel.json` sets build `npm run build`, output `dist`).
 2. Environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (optional `VITE_KNOW_MORE_URL`, `VITE_TERMS_URL`, `VITE_CAMPAIGN_DATES`).
-3. Add the live URL to Supabase **Site URL / Redirect URLs** (needed only for the admin Google login).
+3. Add `https://<your-domain>/**` to Supabase **Redirect URLs** (needed only for the `/admin` Google login).
 4. Point the in-store **QR code** at the production URL.
 5. Phone smoke test: QR → intro → *Sign In with OTP* → register → WhatsApp code → verify → play → leaderboard; then a private tab as guest → play → *Sign In with OTP* on the result screen.
 
@@ -200,7 +209,7 @@ tests (see `docs/WATI_OTP_REGIONS.md`).
 | `SEND_SMS_HOOK_SECRET` | Edge secret (generated by `configure-phone-auth.mjs`) | verifies Supabase's hook signature |
 | `SEND_SMS_DRY_RUN`, `SEND_SMS_SKIP_NUMBERS` | Edge secrets, optional | staging / test-number safety |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions (auto-injected) | server-side DB access |
-| `BREVO_API_KEY` / `SMTP_*`, `EMAIL_FROM`, … | Edge secrets, optional | thank-you email (legacy players with an email only) |
+| `BREVO_API_KEY` / `SMTP_*`, `EMAIL_FROM`, … | Edge secrets, optional | thank-you email (only for historical players who have an email) |
 
 ## Troubleshooting
 
@@ -208,5 +217,5 @@ tests (see `docs/WATI_OTP_REGIONS.md`).
   language), `auth` (WATI token), `network`. The number must be on WhatsApp.
 - **Code arrives but the app errors** — the hook must answer with `Content-Type: application/json` and within 5 s.
 - **"Please wait N seconds"** — Supabase allows one code per number per 60 s.
-- **Admin says "No admin access"** — the Google account must be Google-verified and its lower-case email in `admin_users`.
+- **Admin says "No admin access"** — sign in with the authorised Google account (`marketingext@zopper.com`); WhatsApp-OTP players are never admins.
 - **A returning player sees an old name/region** — by design: an existing profile is never overwritten at sign-in.
