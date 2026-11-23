@@ -11,7 +11,7 @@ export default function HomeScreen({ mode, name, best, muted, busy, onPlay, onHo
     <div className="menu" id="startScreen">
       <div className="menu-bar">
         <div className="best-chip glass"><TrophyIcon /><span>Best <b id="menuBest">{best}</b></span></div>
-        <button className="round-btn glass" id="menuMute" aria-label="Sound on/off" onClick={onMute}><MuteIcon muted={muted} /></button>
+        <button className="round-btn glass" id="menuMute" aria-label="Music and sound on/off" onClick={onMute}><MuteIcon muted={muted} /></button>
       </div>
       <div className="logo">
         <span className="tag dark">Zopper Christmas Challenge</span>

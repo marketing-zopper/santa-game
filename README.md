@@ -43,6 +43,7 @@ is never saved, counted or attached to the account**; only games started after s
   (server-side, `SECURITY DEFINER`) creates it, takes the phone number from the verified auth record (never from the client),
   and never overwrites an existing profile — so a returning player's name and region are always preserved.
 - **Postgres + RLS** (profiles, sessions, games, regions) · **Edge Functions** `start-game`, `finish-game`, `admin`, `send-sms`.
+- **Background music.** `public/assets/christmas-bg-music.mp3` loops quietly (`src/game/music.js`, a plain audio element separate from the synthesised sound effects). Browsers refuse audio before a tap, so it starts on the player's first tap (the intro's Continue) — or immediately if the browser allows it — and is only fetched after the loading screen. The top-right sound button toggles music and sound effects together (pause / play); pausing the *game* does not stop the music; it also pauses while the tab is hidden. Nothing is stored for guests.
 - **Shared form code.** The registration + OTP screen (`src/screens/AuthSheet.jsx`) is a single component used by Entry Mode,
   Game Home and the guest Result screen.
 - **Google sign-in exists ONLY on `/admin`**, for exactly one allow-listed admin (`marketingext@zopper.com`). Players never see it; a

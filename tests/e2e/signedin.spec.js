@@ -149,6 +149,22 @@ test('retry safety: response lost after the server saved → queued, retried on 
   expect((await games()).length).toBe(before + 1);                             // retry was recognised as a duplicate
 });
 
+test('a dropped connection is retried: one failed start-game and one failed finish-game do not cost the player a saved round', async ({ page, context }) => {
+  await injectSession(context, user.session);
+  const attempts = { start: 0, finish: 0 };
+  await page.route('**/functions/v1/start-game', (route) => (++attempts.start === 1 ? route.abort('connectionreset') : route.continue()));
+  await page.route('**/functions/v1/finish-game', (route) => (++attempts.finish === 1 ? route.abort('connectionreset') : route.continue()));
+  await page.goto('/');
+  await homeReady(page);
+  const before = (await games()).length;
+  await playRound(page);
+  await expect(page.locator('#result')).toContainText('Your best:', { timeout: 25_000 });   // saved — not "Practice round", not "saved on this phone"
+  await expect(page.locator('#result')).not.toContainText('Practice');
+  expect(attempts.start).toBe(2);                                                           // retried once, then succeeded
+  expect(attempts.finish).toBe(2);
+  expect((await games()).length).toBe(before + 1);                                          // exactly one saved game
+});
+
 test('session is stored for the player; sign-out returns to Entry and clears it', async ({ page, context }) => {
   await injectSession(context, user.session);
   await page.goto('/');

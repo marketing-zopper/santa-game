@@ -188,4 +188,62 @@ test.describe('Guest journey', () => {
     await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
     expect(await page.evaluate(() => window.__audio.oscillators)).toBe(before); // muted: silent countdown
   });
+
+  test('background music: autoplays on the first tap, loops, follows the sound button, keeps playing through a round, stores nothing', async ({ page, context }) => {
+    const res = await page.request.get('/assets/christmas-bg-music.mp3');
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toMatch(/audio\/mpeg|audio\/mp3/);
+
+    await page.goto('/');
+    await page.waitForSelector('#introScreen', { timeout: 20_000 });
+    const st = () => page.evaluate(() => {
+      const m = window.__ssc.music, a = m.el;
+      return a ? { paused: a.paused, loop: a.loop, path: new URL(a.src).pathname, t: a.currentTime, dur: a.duration, vol: a.volume } : null;
+    });
+
+    await page.click('#introContinue');                                       // the first tap anywhere unlocks audio
+    await expect.poll(async () => (await st())?.paused, { timeout: 15_000 }).toBe(false);
+    const s0 = await st();
+    expect(s0.path).toBe('/assets/christmas-bg-music.mp3');
+    expect(s0.loop).toBe(true);                                               // loops
+    expect(s0.vol).toBeGreaterThan(0); expect(s0.vol).toBeLessThanOrEqual(0.5);
+    await page.waitForTimeout(1500);
+    expect((await st()).t).toBeGreaterThan(s0.t);                              // really playing
+
+    await page.click('#guestBtn');
+    await homeReady(page);
+    await expect.poll(async () => (await st()).paused).toBe(false);           // keeps playing across screens
+
+    await page.click('#menuMute');                                            // top-right sound button → pause
+    await expect.poll(async () => (await st()).paused).toBe(true);
+    const tPaused = (await st()).t;
+    await page.waitForTimeout(800);
+    expect((await st()).t).toBe(tPaused);                                      // truly stopped
+    await page.click('#menuMute');                                            // → play again, from where it stopped
+    await expect.poll(async () => (await st()).paused).toBe(false);
+    expect((await st()).t).toBeGreaterThanOrEqual(tPaused);
+
+    await clickPlay(page);                                                    // music continues through the countdown and the round
+    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    expect((await st()).paused).toBe(false);
+    await page.click('#muteBtn');                                             // in-game sound button works too
+    await expect.poll(async () => (await st()).paused).toBe(true);
+    await page.click('#muteBtn');
+    await expect.poll(async () => (await st()).paused).toBe(false);
+    await page.click('#pauseBtn');                                            // pausing the GAME does not stop the music
+    await expect(page.locator('#pauseScreen')).toBeVisible();
+    expect((await st()).paused).toBe(false);
+    await page.click('#quitBtn');
+    await waitForResults(page);
+    expect((await st()).paused).toBe(false);
+
+    // loops: jump to the last half second, it must wrap around instead of ending
+    await expect.poll(async () => Number.isFinite((await st()).dur)).toBe(true);
+    await page.evaluate(() => { const a = window.__ssc.music.el; a.currentTime = a.duration - 0.4; });
+    await expect.poll(async () => { const s = await st(); return s.t < 5 && !s.paused; }, { timeout: 10_000 }).toBe(true);
+
+    // a guest's sound choice is never persisted
+    expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
+    expect(await context.cookies()).toEqual([]);
+  });
 });

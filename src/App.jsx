@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { ToastProvider, useToast } from './contexts/ToastContext.jsx';
 import { GameController } from './game/GameController.js';
+import { music } from './game/music.js';
 import { startSession, finishSession, queuePending, flushPending, pending } from './services/gameService.js';
 import { requestLocation } from './services/location.js';
 import { store } from './lib/storage.js';
@@ -78,13 +79,15 @@ function GameApp() {
       onGameOver: (s) => handlers.current.gameOver(s),
     });
     g.setMuted(live.current.muted);
+    music.arm(); music.setMuted(live.current.muted);          // background music starts on the first tap (or at once if the browser allows)
     gameRef.current = g;
     // Test-only hook: exists ONLY in builds made with --mode e2e (VITE_E2E=1). Constant-folded away in production.
-    if (import.meta.env.VITE_E2E === '1') window.__ssc = { game: g };
-    return () => { clearTimeout(overTimer.current); g.destroy(); gameRef.current = null; if (import.meta.env.VITE_E2E === '1') delete window.__ssc; };
+    if (import.meta.env.VITE_E2E === '1') window.__ssc = { game: g, music };
+    return () => { clearTimeout(overTimer.current); g.destroy(); music.destroy(); gameRef.current = null; if (import.meta.env.VITE_E2E === '1') delete window.__ssc; };
   }, []);
 
-  useEffect(() => { if (gameRef.current) gameRef.current.setMuted(muted); }, [muted]);
+  useEffect(() => { if (gameRef.current) gameRef.current.setMuted(muted); music.setMuted(muted); }, [muted]);   // the sound button controls sound effects AND the music
+  useEffect(() => { if (loaderGone) music.tryAutoplay(); }, [loaderGone]);                                   // fetch + start (if allowed) only after loading
   // a signed-in player's sound preference is remembered on this device; a guest's is not (no guest data is persisted)
   useEffect(() => { if (signedIn) setMuted(store.get('ssc-muted') === '1'); }, [signedIn]);
   const toggleMute = () => {
