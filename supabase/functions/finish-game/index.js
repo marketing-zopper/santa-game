@@ -70,7 +70,7 @@ Deno.serve(handler(['POST'], async (req) => {
   if (emailConfigured()) {
     const { data: claim } = await db.from('profiles')
       .update({ thanks_sent_at: new Date().toISOString() })
-      .eq('id', user.id).is('thanks_sent_at', null).select('display_name, email').maybeSingle();
+      .eq('id', user.id).is('thanks_sent_at', null).not('email', 'is', null).select('display_name, email').maybeSingle();   // phone players have no email → no email is sent
     if (claim?.email) {
       try {
         const msg = thanksEmail({ name: claim.display_name, score: r.score, best: standing.out_best, rank: standing.out_rank == null ? null : Number(standing.out_rank), total: Number(standing.out_total) });

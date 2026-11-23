@@ -11,7 +11,10 @@ function newSeed() {
   return (a[0] % 2147483646) + 1;
 }
 
-/** Re-sync the profile's Auth-derived fields (name, avatar, Google-verified flag) from the verified Auth identity. */
+/** True for players who signed in with a phone OTP only (no Google / email identity). */
+const isPhoneOnly = (user) => !!user.phone && !user.email;
+
+/** Re-sync a LEGACY Google player's Auth-derived fields (name, avatar, verified flag). Phone players are never touched here. */
 async function syncProfile(db, user) {
   const meta = user.user_metadata || {};
   await db.from('profiles').upsert({
@@ -19,7 +22,8 @@ async function syncProfile(db, user) {
     display_name: String(meta.full_name || meta.name || (user.email || '').split('@')[0] || 'Player').slice(0, 120),
     email: user.email ?? null,
     avatar_url: meta.avatar_url || meta.picture || null,
-    email_verified: isGoogleVerified(user),
+    verified: isGoogleVerified(user),
+    auth_provider: 'google',
   }, { onConflict: 'id' });
 }
 
@@ -29,12 +33,14 @@ Deno.serve(handler(['POST'], async (req) => {
 
   const open = () => db.rpc('start_session', { p_player: user.id, p_seed: newSeed() });
   let { data, error } = await open();
-  if (error && /unknown_player|not_verified/.test(error.message)) {   // profile missing or stale (e.g. Google identity linked after the row was made): re-sync from Auth, retry once
+  if (error && /unknown_player|not_verified/.test(error.message)) {
+    // a phone player's profile exists ONLY after OTP verification + registration: never create or "repair" one here
+    if (isPhoneOnly(user)) throw new HttpError(403, 'Please finish signing in with your WhatsApp OTP to play for the leaderboard.');   // profile missing or stale (e.g. Google identity linked after the row was made): re-sync from Auth, retry once
     await syncProfile(db, user);
     ({ data, error } = await open());
   }
   if (error) {
-    if (/not_verified/.test(error.message)) throw new HttpError(403, 'Please sign in with Google to play for the leaderboard.');
+    if (/not_verified/.test(error.message)) throw new HttpError(403, 'Please sign in with your WhatsApp OTP to play for the leaderboard.');
     if (/rate_limited/.test(error.message)) throw new HttpError(429, 'Too many games at once. Please wait a minute.');
     throw error;
   }
