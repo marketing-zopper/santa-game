@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeIndianMobile, formatIndianMobile, maskIndianMobile, isE164Indian, parseNumberList } from '../src/lib/phone.js';
 import { REGIONS, isRegion } from '../src/lib/regions.js';
-import { buildSendRequest, readWatiConfig, sendWhatsAppOtp, checkAuthTemplate, verifyWebhook, signWebhook, WatiError } from '../supabase/functions/_shared/wati.js';
+import { buildSendRequest, readWatiConfig, sendWhatsAppOtp, checkAuthTemplate, verifyWebhook, signWebhook, safeInfo, WatiError } from '../supabase/functions/_shared/wati.js';
 
 describe('Indian mobile normalisation (+91, E.164)', () => {
   it.each([
@@ -71,7 +71,31 @@ describe('WATI send request (v1 sendTemplateMessage)', () => {
   });
 
   const reply = (status, body) => async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-  it('succeeds when WATI accepts the message', async () => { await expect(sendWhatsAppOtp(cfg, '+919876543210', '123456', reply(200, { result: true }))).resolves.toBeUndefined(); });
+  it('succeeds when WATI accepts the message (and reports status + timing)', async () => {
+    await expect(sendWhatsAppOtp(cfg, '+919876543210', '123456', reply(200, { result: true }))).resolves.toMatchObject({ httpStatus: 200 });
+  });
+  // Regression: a real send once reached WhatsApp but the app showed "couldn't send". WATI's success reply can look different
+  // from what we expected; any HTTP 2xx without an explicit refusal must count as sent.
+  it.each([
+    ['result "success"', { result: 'success' }], ['an unfamiliar success body', { phone_number: '919876543210', template_name: 'sec_otpverify', contact: { id: 'x' } }],
+    ['an empty object', {}], ['ok:true', { ok: true }],
+  ])('treats HTTP 200 with %s as SENT', async (_n, body) => {
+    await expect(sendWhatsAppOtp(cfg, '+919876543210', '123456', reply(200, body))).resolves.toMatchObject({ httpStatus: 200 });
+  });
+  it('treats HTTP 200 with a non-JSON body as SENT', async () => {
+    await expect(sendWhatsAppOtp(cfg, '+919876543210', '123456', async () => new Response('OK', { status: 200 }))).resolves.toMatchObject({ httpStatus: 200 });
+  });
+  it.each([[{ result: false }], [{ result: 'error' }], [{ ok: false }]])('still refuses an explicit refusal %j', async (body) => {
+    await expect(sendWhatsAppOtp(cfg, '+919876543210', '123456', reply(200, body))).rejects.toMatchObject({ code: 'wati_rejected' });
+  });
+  it('a slow-but-successful WATI reply is still a success (no client-side timeout shorter than the budget)', async () => {
+    const slow = async () => { await new Promise((r) => setTimeout(r, 300)); return new Response(JSON.stringify({ result: true }), { status: 200 }); };
+    await expect(sendWhatsAppOtp(cfg, '+919876543210', '123456', slow)).resolves.toMatchObject({ httpStatus: 200 });
+  });
+  it('log text never contains digit runs (OTP-like numbers) or the token', () => {
+    expect(safeInfo({ info: 'code 482913 sent to 919876543210' })).toBe('code ### sent to ###');
+    expect(safeInfo(null)).toBe('');
+  });
   it.each([
     [401, {}, 'auth'], [403, {}, 'auth'], [429, {}, 'rate_limited'], [500, { info: 'boom' }, 'wati_error'],
     [200, { result: false, info: 'Template not found' }, 'wati_rejected'], [200, { result: true, validWhatsAppNumber: false }, 'not_on_whatsapp'],

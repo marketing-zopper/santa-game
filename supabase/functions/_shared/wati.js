@@ -10,7 +10,7 @@
 
 export class WatiError extends Error {
   /** @param code machine-readable reason   @param userMessage safe to show a player   @param detail for server logs only (never contains the token or the OTP) */
-  constructor(code, userMessage, detail) { super(detail || userMessage); this.code = code; this.userMessage = userMessage; this.detail = detail || userMessage; }
+  constructor(code, userMessage, detail, extra = {}) { super(detail || userMessage); this.code = code; this.userMessage = userMessage; this.detail = detail || userMessage; this.httpStatus = extra.httpStatus ?? null; this.ms = extra.ms ?? null; }
 }
 
 const trimSlash = (s) => String(s || '').replace(/\/+$/, '');
@@ -44,22 +44,33 @@ export function buildSendRequest(cfg, phone, otp) {
   };
 }
 
+/** Short, safe text from a WATI reply for logs: never the token, never a code (6+ digit runs are masked). */
+export const safeInfo = (j) => String((j && (j.info || j.message || j.title)) || '').replace(/\d{4,}/g, '###').slice(0, 160);
+
 /**
- * Sends the OTP over WhatsApp. Resolves on success; throws WatiError otherwise.
- * Supabase gives an Auth Hook only 5 seconds, so the WATI call has its own hard budget (default 4 s).
+ * Sends the OTP over WhatsApp. Resolves with { httpStatus, ms } on success; throws WatiError otherwise.
+ *
+ * "Accepted" = HTTP 2xx with no explicit refusal. WATI's reply shape varies (result: true / "success" / absent), and the
+ * message may already be on its way, so only a clear refusal (result false/"error", ok false, or an invalid WhatsApp number)
+ * counts as a failure — an unfamiliar-but-successful reply must NOT be reported to the player as an error.
  */
-export async function sendWhatsAppOtp(cfg, phone, otp, fetchImpl = fetch, timeoutMs = 4000) {
+export async function sendWhatsAppOtp(cfg, phone, otp, fetchImpl = fetch, timeoutMs = 20000) {
   const { url, init } = buildSendRequest(cfg, phone, otp);
+  const t0 = Date.now();
   let res;
   try { res = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }); }
-  catch (e) { throw new WatiError('network', "We couldn't reach WhatsApp. Please try again in a moment.", `WATI request failed: ${e && e.name}`); }
+  catch (e) { throw new WatiError('network', "We couldn't reach WhatsApp. Please try again in a moment.", `WATI request failed: ${e && e.name}`, { ms: Date.now() - t0 }); }
+  const ms = Date.now() - t0;
   let j = null; try { j = await res.json(); } catch { /* not json */ }
-  if (res.status === 401 || res.status === 403) throw new WatiError('auth', "We can't send WhatsApp codes right now. Please try again later.", `WATI rejected the credentials (HTTP ${res.status})`);
-  if (res.status === 429) throw new WatiError('rate_limited', 'Too many codes were requested. Please wait a few minutes.', 'WATI rate limit (HTTP 429)');
-  if (!res.ok) throw new WatiError('wati_error', "We couldn't send the WhatsApp code. Please try again.", `WATI HTTP ${res.status}: ${String((j && (j.info || j.message || j.title)) || '').slice(0, 160)}`);
-  const accepted = j && (j.result === true || j.result === 'success' || j.ok === true);
-  if (j && j.validWhatsAppNumber === false) throw new WatiError('not_on_whatsapp', "This number doesn't seem to be on WhatsApp. Check the number and try again.", 'WATI: number is not a valid WhatsApp number');
-  if (!accepted) throw new WatiError('wati_rejected', "We couldn't send the WhatsApp code. Please check the number and try again.", `WATI refused the message: ${String((j && (j.info || j.message)) || 'no detail').slice(0, 160)}`);
+  const extra = { httpStatus: res.status, ms };
+  if (res.status === 401 || res.status === 403) throw new WatiError('auth', "We can't send WhatsApp codes right now. Please try again later.", `WATI rejected the credentials (HTTP ${res.status})`, extra);
+  if (res.status === 429) throw new WatiError('rate_limited', 'Too many codes were requested. Please wait a few minutes.', 'WATI rate limit (HTTP 429)', extra);
+  if (!res.ok) throw new WatiError('wati_error', "We couldn't send the WhatsApp code. Please try again.", `WATI HTTP ${res.status}: ${safeInfo(j)}`, extra);
+  if (j && j.validWhatsAppNumber === false) throw new WatiError('not_on_whatsapp', "This number doesn't seem to be on WhatsApp. Check the number and try again.", 'WATI: number is not a valid WhatsApp number', extra);
+  if (j && (j.result === false || j.result === 'error' || j.result === 'failed' || j.ok === false)) {
+    throw new WatiError('wati_rejected', "We couldn't send the WhatsApp code. Please check the number and try again.", `WATI refused the message: ${safeInfo(j) || 'no detail'}`, extra);
+  }
+  return { httpStatus: res.status, ms };
 }
 
 /**

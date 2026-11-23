@@ -22,6 +22,20 @@ import { normalizeIndianMobile, maskIndianMobile, parseNumberList } from '../_sh
 import { verifyWebhook, readWatiConfig, sendWhatsAppOtp, checkAuthTemplate, WatiError } from '../_shared/wati.js';
 
 const MAX_OTPS_PER_NUMBER_PER_HOUR = 5;
+const FAST_WAIT_MS = 2800;       // how long to wait for WATI's verdict before acknowledging (Supabase's hard limit is 5 s)
+
+/** Keep working after the reply has been sent (Supabase Edge Runtime). */
+const background = (p) => { if (globalThis.EdgeRuntime && globalThis.EdgeRuntime.waitUntil) globalThis.EdgeRuntime.waitUntil(p); };
+
+/** Delivery log for operators (public.otp_hook_log): masked number, outcome, timings, WATI's HTTP status — never the code or the token. */
+async function logDelivery(who, outcome, info, hookMs) {
+  try {
+    await serviceClient().from('otp_hook_log').insert({
+      phone_masked: who, outcome, http_status: (info && info.httpStatus) ?? null, wati_ms: (info && info.ms) ?? null, hook_ms: hookMs,
+      code: (info && info.code) || null, detail: info && info.detail ? String(info.detail).replace(/\d{4,}/g, '###').slice(0, 200) : null,
+    });
+  } catch (e) { console.error('send-sms: could not write otp_hook_log', e && e.message); }
+}
 // Supabase Auth is strict about hook replies: the body must be JSON with Content-Type EXACTLY "application/json"
 // (no charset suffix), otherwise it reports "Invalid payload sent to hook" — even for a successful send.
 const reply = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -74,12 +88,30 @@ Deno.serve(async (req) => {
       throw new WatiError('template', "We can't send WhatsApp codes right now. Please try again later.", `WATI template problem: ${templateCheck.result.reason}`);
     }
 
-    await sendWhatsAppOtp(cfg, phone, otp);
-    console.log(`send-sms: OTP sent over WhatsApp to ${who}`);
+    // Supabase gives this hook only 5 s in total, but WATI's reply time varies. So: wait up to FAST_WAIT_MS for a verdict
+    // (an instant, accurate error when WATI refuses quickly); if WATI is still working by then, ACKNOWLEDGE and let the send
+    // finish in the background. Reporting "failed" while the message is actually being delivered (the player gets the code
+    // AND an error) is the worst outcome, so a slow WATI is treated as "in progress", never as a failure.
+    const t0 = Date.now();
+    const sending = sendWhatsAppOtp(cfg, phone, otp).then((r) => ({ ok: true, r }), (err) => ({ err }));
+    const first = await Promise.race([sending, new Promise((res) => setTimeout(() => res({ slow: true }), FAST_WAIT_MS))]);
+    if (first.slow) {
+      background(sending.then((s) => logDelivery(who, s.ok ? 'sent_slow' : 'failed_slow', s.ok ? s.r : s.err, Date.now() - t0)));
+      console.log(`send-sms: WATI still working after ${FAST_WAIT_MS} ms for ${who}; acknowledged, finishing in the background`);
+      return reply(200, {});
+    }
+    if (first.err) {
+      const e = first.err;
+      background(logDelivery(who, 'failed', e, Date.now() - t0));
+      console.error(`send-sms: ${e.code || 'error'} for ${who}: ${e.detail || e.message}`);          // detail never contains the token or the code
+      return hookError(e.code === 'rate_limited' ? 429 : e.code === 'not_on_whatsapp' ? 400 : 500, e.userMessage || "We couldn't send the WhatsApp code. Please try again.");
+    }
+    background(logDelivery(who, 'sent', first.r, Date.now() - t0));
+    console.log(`send-sms: OTP sent over WhatsApp to ${who} (WATI ${first.r.ms} ms)`);
     return reply(200, {});
   } catch (e) {
     if (e instanceof WatiError) {
-      console.error(`send-sms: ${e.code} for ${who}: ${e.detail}`);          // detail never contains the token or the code
+      console.error(`send-sms: ${e.code} for ${who}: ${e.detail}`);
       return hookError(e.code === 'rate_limited' ? 429 : e.code === 'not_on_whatsapp' ? 400 : 500, e.userMessage);
     }
     console.error('send-sms: unexpected error', e && e.message);
