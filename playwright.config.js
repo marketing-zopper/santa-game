@@ -5,6 +5,7 @@ import { defineConfig } from '@playwright/test';
 // (to create temporary test users); without it they are skipped.
 export default defineConfig({
   testDir: 'tests/e2e',
+  globalSetup: './tests/e2e/global-setup.js',
   timeout: 120_000,
   expect: { timeout: 15_000 },
   workers: 1,

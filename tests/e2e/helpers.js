@@ -50,20 +50,56 @@ export async function waitForResults(page, timeout = 60_000) {
   await page.waitForSelector('#overScreen', { timeout });
 }
 
-/** Create a temporary Auth user (confirmed email) and return a ready-made browser session for it. */
-export async function makeTestUser(label, fullName) {
+/** Reserved test numbers (Supabase fixed-OTP numbers during the run; the Send-SMS hook never messages them). */
+export const TEST_PHONES = Array.from({ length: 12 }, (_, i) => '600000' + (1010 + i));   // 6000001010 … 6000001021
+export const OTP_CODE = () => process.env.E2E_OTP_CODE || '';
+export const PHONE_UI_READY = () => !!(SERVICE_KEY && process.env.E2E_OTP_CODE);
+
+const randomMobile = () => '91' + String(6 + Math.floor(Math.random() * 4)) + String(Math.floor(Math.random() * 1e9)).padStart(9, '0');
+
+/**
+ * Create a temporary Auth user and return a ready-made browser session for it.
+ *   kind 'phone'  (default) a verified phone player, already registered with a name + Croma region — the normal player
+ *   kind 'google' a LEGACY Google player (also what the admin dashboard uses)
+ *   kind 'unregistered' a phone whose OTP was verified but who never finished registration
+ */
+export async function makeTestUser(label, fullName, { kind = 'phone', region = 'Croma East Region', phone } = {}) {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, opts);
   const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const email = `ssc-e2e-${label}-${stamp}@example.test`, password = `Pw-${stamp}!`;
-  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: { provider: 'google', providers: ['google'] }, user_metadata: { full_name: fullName, email_verified: true } });
-  if (error) throw error;
+  const password = `Pw-${stamp}!`;
   const anon = createClient(SUPABASE_URL, ANON_KEY, opts);
-  const { data: s, error: e2 } = await anon.auth.signInWithPassword({ email, password });
-  if (e2) throw e2;
+  let id, email = null, e164 = null, session;
+  if (kind === 'google') {
+    email = `ssc-e2e-${label}-${stamp}@example.test`;
+    const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: { provider: 'google', providers: ['google'] }, user_metadata: { full_name: fullName, email_verified: true } });
+    if (error) throw error;
+    id = data.user.id;
+    const { data: s, error: e2 } = await anon.auth.signInWithPassword({ email, password });
+    if (e2) throw e2;
+    session = s.session;
+  } else {
+    const num = phone ? '91' + phone : randomMobile();
+    e164 = '+' + num;
+    const { data, error } = await admin.auth.admin.createUser({ phone: num, phone_confirm: true, password });
+    if (error) throw error;
+    id = data.user.id;
+    const { data: s, error: e2 } = await anon.auth.signInWithPassword({ phone: e164, password });
+    if (e2) throw e2;
+    session = s.session;
+    if (kind === 'phone') { const { error: e3 } = await anon.rpc('complete_registration', { p_name: fullName, p_region: region }); if (e3) throw e3; }
+  }
   return {
-    id: data.user.id, email, session: s.session, admin,
-    async cleanup() { await admin.auth.admin.deleteUser(data.user.id); await admin.from('admin_users').delete().eq('email', email); },
+    id, email, phone: e164, session, admin,
+    async cleanup() { await admin.auth.admin.deleteUser(id); if (email) await admin.from('admin_users').delete().eq('email', email); },
   };
+}
+
+/** Remove any Auth users (and, by cascade, profiles / sessions / games) created for the given reserved test numbers. */
+export async function deleteUsersByPhone(...phones10) {
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, opts);
+  const want = new Set(phones10.map((p) => '91' + p));
+  const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  for (const u of (data && data.users) || []) if (u.phone && want.has(u.phone)) await admin.auth.admin.deleteUser(u.id);
 }
 
 /** Put the user's session into localStorage before the app loads (what a returning visitor already has). */

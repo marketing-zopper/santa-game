@@ -12,7 +12,8 @@ test.describe('Guest journey', () => {
     await expect(page.locator('#introPrizes li')).toHaveCount(3);
     await page.click('#introContinue');
     await page.waitForSelector('#entrySheet');                                 // 4. choose entry mode
-    await expect(page.locator('#googleBtn')).toBeVisible();
+    await expect(page.locator('#signInBtn')).toBeVisible();
+    await expect(page.locator('#signInBtn')).toHaveText('Sign In with OTP');
     await expect(page.locator('#guestBtn')).toBeVisible();
     await expect(page.locator('.entry-card')).toHaveCount(2);
     await page.click('#guestBtn');
@@ -44,6 +45,8 @@ test.describe('Guest journey', () => {
     await expect(page.locator('#leaderSheet, .lb-list')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /leaderboard/i })).toHaveCount(0);
     await expect(page.locator('#result')).toContainText("isn't saved");
+    await expect(page.locator('#resultSignInBtn')).toHaveText('Sign In with OTP');          // …but a way to sign in
+    await expect(page.locator('#overScreen')).toContainText('Want to save your future scores and climb the leaderboard? Sign in to compete!');
   });
 
   test('full round: countdown → play → game over → results → play again (repeatedly), one animation loop only', async ({ page }) => {
@@ -184,28 +187,5 @@ test.describe('Guest journey', () => {
     await clickPlay(page);
     await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
     expect(await page.evaluate(() => window.__audio.oscillators)).toBe(before); // muted: silent countdown
-  });
-
-  test('Google button starts a Supabase PKCE OAuth redirect to Google', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('#introScreen', { timeout: 20_000 });
-    await page.click('#introContinue');
-    await page.waitForSelector('#entrySheet');
-    const reqPromise = page.waitForRequest((r) => /\/auth\/v1\/authorize/.test(r.url()), { timeout: 15_000 });
-    await page.route('https://accounts.google.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>stub google</title>' }));
-    await page.click('#googleBtn');
-    const url = new URL((await reqPromise).url());
-    expect(url.hostname).toMatch(/supabase\.co$/);
-    expect(url.searchParams.get('provider')).toBe('google');
-    expect(url.searchParams.get('code_challenge')).toBeTruthy();               // PKCE
-    expect(url.searchParams.get('redirect_to')).toMatch(/^http:\/\/localhost:4174\/?$/);
-  });
-
-  test('failed Google sign-in returns to the entry screen with a readable error', async ({ page }) => {
-    await page.goto('/?error=access_denied&error_code=provider_email_needs_verification&error_description=Unable+to+exchange+external+code');
-    await page.waitForSelector('#entrySheet', { timeout: 20_000 });
-    await expect(page.locator('#entryErr')).toContainText('Unable to exchange external code');
-    await expect(page.locator('#guestBtn')).toBeVisible();                     // guest remains available
-    expect(page.url()).not.toContain('error_description');                     // URL cleaned
   });
 });

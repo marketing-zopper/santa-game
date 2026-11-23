@@ -33,8 +33,8 @@ for (const [name, width, height] of PHONES) {
     expect(panel.x).toBeGreaterThanOrEqual(0);
     expect(panel.x + panel.width).toBeLessThanOrEqual(width + 1);
     // both choices are always reachable (the panel scrolls inside the screen on very short displays)
-    await page.locator('#googleBtn').scrollIntoViewIfNeeded();
-    await expect(page.locator('#googleBtn')).toBeVisible();
+    await page.locator('#signInBtn').scrollIntoViewIfNeeded();
+    await expect(page.locator('#signInBtn')).toBeVisible();
     await page.locator('#guestBtn').scrollIntoViewIfNeeded();
     await expect(page.locator('#guestBtn')).toBeVisible();
     await page.screenshot({ path: `test-results/shots/${width}x${height}-2-entry.png` });
@@ -67,6 +67,20 @@ for (const [name, width, height] of PHONES) {
     await page.locator('#againBtn').scrollIntoViewIfNeeded();
     await expect(page.locator('#againBtn')).toBeVisible();
     await page.screenshot({ path: `test-results/shots/${width}x${height}-5-results.png` });
+    // the guest result screen offers "Sign In with OTP"; the registration form fits and every field + the Send OTP button are reachable
+    await page.locator('#resultSignInBtn').scrollIntoViewIfNeeded();
+    await expect(page.locator('#resultSignInBtn')).toBeVisible();
+    await page.click('#resultSignInBtn');
+    await page.waitForSelector('#authSheet');
+    await page.waitForTimeout(450);
+    expect(await noHorizontalScroll(page)).toBe(true);
+    for (const sel of ['#regName', '#regRegion', '#regPhone', '#regSubmit']) { await page.locator(sel).scrollIntoViewIfNeeded(); await expect(page.locator(sel), `${sel} reachable`).toBeVisible(); }
+    const sheet = await page.locator('#authSheet').boundingBox();
+    expect(sheet.x).toBeGreaterThanOrEqual(0);
+    expect(sheet.x + sheet.width).toBeLessThanOrEqual(width + 1);
+    await page.screenshot({ path: `test-results/shots/${width}x${height}-6-register.png` });
+    await page.click('#authBack');                                        // cancelling returns to the same result screen
+    await expect(page.locator('#overScreen')).toBeVisible();
   });
 }
 
