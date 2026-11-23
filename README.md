@@ -43,7 +43,7 @@ is never saved, counted or attached to the account**; only games started after s
   (server-side, `SECURITY DEFINER`) creates it, takes the phone number from the verified auth record (never from the client),
   and never overwrites an existing profile — so a returning player's name and region are always preserved.
 - **Postgres + RLS** (profiles, sessions, games, regions) · **Edge Functions** `start-game`, `finish-game`, `admin`, `send-sms`.
-- **Background music.** `public/assets/christmas-bg-music.mp3` loops quietly (`src/game/music.js`, a plain audio element separate from the synthesised sound effects). Browsers refuse audio before a tap, so it starts on the player's first tap (the intro's Continue) — or immediately if the browser allows it — and is only fetched after the loading screen. The top-right sound button toggles music and sound effects together (pause / play); pausing the *game* does not stop the music; it also pauses while the tab is hidden. Nothing is stored for guests.
+- **Background music.** `public/assets/christmas-bg-music.mp3` loops quietly (`src/game/music.js`) and starts the moment the page lands. Browsers do not allow *audible* autoplay before a tap (Chrome, Edge, Safari and Firefox all enforce this), so it first tries to play audibly and otherwise starts **silently** and becomes audible on the visitor's very first tap/click/key. It uses a plain `<audio>` element and, only if the browser refuses muted autoplay on it (Chrome and Edge do), switches to a hidden non-rendered `<video>` playing the same MP3, which those browsers do allow. The top-right sound button toggles music and sound effects together; pausing the *game* does not stop the music; it pauses while the tab is hidden and resumes itself if an engine pauses it. Nothing is stored for guests.
 - **Shared form code.** The registration + OTP screen (`src/screens/AuthSheet.jsx`) is a single component used by Entry Mode,
   Game Home and the guest Result screen.
 - **Google sign-in exists ONLY on `/admin`**, for exactly one allow-listed admin (`marketingext@zopper.com`). Players never see it; a
@@ -70,6 +70,12 @@ scripts/                  configure-phone-auth.mjs · test-otp.mjs · verify-bac
 tests/                    unit (Vitest) + browser (Playwright)
 docs/                     MIGRATION.md (React/Supabase migration) · WATI_OTP_REGIONS.md (this update)
 ```
+
+## Responsive design & browser support
+
+The original design is a phone-portrait game; the UI layer is now responsive from 320 px phones to 2560 px monitors. On tablets, laptops and desktops the menus, sheets, HUD and banners are scaled up (CSS `zoom`, capped at 1.6x; phones are unchanged) and the HUD / menu bar stay over the playfield instead of the far screen corners; the intro's action bar sits in a centred column. See `src/styles/responsive.css` and `GameController.resize()`.
+
+Tested in **Chrome, Edge, Firefox and WebKit (the Safari engine)** at 16 viewport sizes (iPhone SE, Android, iPhone Pro Max, iPad Air/Pro, laptops, Full HD, QHD, ultrawide). Real Safari on iOS/macOS and real devices could not be tested here. Firefox older than 126 ignores `zoom` (the UI simply stays at phone size there).
 
 ## Local setup
 

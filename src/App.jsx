@@ -79,7 +79,7 @@ function GameApp() {
       onGameOver: (s) => handlers.current.gameOver(s),
     });
     g.setMuted(live.current.muted);
-    music.arm(); music.setMuted(live.current.muted);          // background music starts on the first tap (or at once if the browser allows)
+    music.begin(live.current.muted);          // background music: starts on landing (audible if the browser allows, otherwise silent until the first tap)
     gameRef.current = g;
     // Test-only hook: exists ONLY in builds made with --mode e2e (VITE_E2E=1). Constant-folded away in production.
     if (import.meta.env.VITE_E2E === '1') window.__ssc = { game: g, music };
@@ -87,7 +87,6 @@ function GameApp() {
   }, []);
 
   useEffect(() => { if (gameRef.current) gameRef.current.setMuted(muted); music.setMuted(muted); }, [muted]);   // the sound button controls sound effects AND the music
-  useEffect(() => { if (loaderGone) music.tryAutoplay(); }, [loaderGone]);                                   // fetch + start (if allowed) only after loading
   // a signed-in player's sound preference is remembered on this device; a guest's is not (no guest data is persisted)
   useEffect(() => { if (signedIn) setMuted(store.get('ssc-muted') === '1'); }, [signedIn]);
   const toggleMute = () => {

@@ -1,0 +1,41 @@
+/* Responsive + cross-browser layer. Loaded LAST; on phones every rule here resolves to "no change".
+ *
+ * The original design is a phone-portrait game. On tablets, laptops and big screens the whole UI layer (menus, sheets, HUD,
+ * banners) is scaled up with the CSS `zoom` property (Chrome, Edge, Safari, Firefox 126+; older Firefox simply stays at 1x), and the
+ * HUD / menu bar are kept over the playfield instead of drifting to the far screen corners.
+ *
+ *   --ui-zoom   1 on phones, up to 1.6 on large screens      (set by GameController.resize())
+ *   --menu-zoom the same, but never more than the sky above Santa can hold (Game Home content ~650px tall at 1x)
+ *   --stage-w   width of the playfield column, in px          (set by GameController.resize())
+ */
+:root{--ui-zoom:1;--menu-zoom:1;--stage-w:100%}
+
+@supports (zoom:1){
+  #hud,.panel,.toast,#banner,#count,.intro-hero,.intro-card,.intro-fine,.intro-actions,.loader>*{zoom:var(--ui-zoom)}
+  .menu{zoom:var(--menu-zoom)}   /* Game Home has its own scale: its content must fit the sky above Santa */
+}
+
+/* HUD and Game Home stay inside the playfield column (identical to full width on phones) */
+#hud,.menu{box-sizing:border-box}   /* both carry their own padding; an explicit width must include it */
+#hud{left:0;right:0;margin-inline:auto;width:calc(var(--stage-w) / var(--ui-zoom))}
+.menu{left:0;right:0;margin-inline:auto;width:calc(var(--stage-w) / var(--menu-zoom));height:calc(var(--scene-top, 70%) / var(--menu-zoom))}
+
+/* Intro: the bottom action bar keeps its full-width background, but its buttons sit in a centred column */
+.intro-actions{
+  padding-left:max(16px,env(safe-area-inset-left,0px),calc((100% - 460px) / 2));
+  padding-right:max(16px,env(safe-area-inset-right,0px),calc((100% - 460px) / 2));
+}
+
+/* ---- cross-browser fixes ---- */
+/* The page is `color-scheme:dark`; native controls would inherit a dark popup and make navy option text unreadable */
+.rwrap select,.rwrap select option{color-scheme:light;background-color:#fff;color:var(--navy)}
+.rwrap select{-moz-appearance:none;-webkit-appearance:none;appearance:none}
+.rwrap select:invalid{color:#7C8298}
+/* iOS Safari zooms into inputs below 16px: all form controls are >= 16px; keep them that way */
+input,select,textarea{font-size:max(16px,1em)}
+/* Safari: stop the text-size auto-adjust from enlarging copy after rotation */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* Firefox: the rotate overlay and fixed layers must not show scrollbars */
+html,body{scrollbar-width:none}
+body::-webkit-scrollbar{display:none}
+.panel,.intro-scroll{scrollbar-width:thin}

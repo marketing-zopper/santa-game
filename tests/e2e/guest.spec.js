@@ -58,6 +58,11 @@ test.describe('Guest journey', () => {
       await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
       await expect(page.locator('#banner')).toContainText('Catch!');
       await botFor(page, 7500);                                                // play long enough for the first phones to land
+      if (round === 3) {                                                       // after repeated replays there must still be ONE loop (~60 fps), not two or more
+        const fps = await page.evaluate(() => new Promise((res) => { const gm = window.__ssc.game, f0 = gm.frameCount, t0 = performance.now(); setTimeout(() => res((gm.frameCount - f0) / ((performance.now() - t0) / 1000)), 1500); }));
+        expect(fps, 'frames per second (a duplicated loop would double it)').toBeLessThan(75);
+        expect(fps).toBeGreaterThan(15);
+      }
       const score = await page.evaluate(() => window.__ssc.game.sim.score);
       expect(score).toBeGreaterThan(0);
       await expect(page.locator('#score')).toHaveText(String(score));          // HUD follows the engine
@@ -68,10 +73,6 @@ test.describe('Guest journey', () => {
       await expect(page.locator('#stBest')).toHaveText(String(score));         // in-memory best for this visit
       await expect(page.locator('#againBtn')).toBeVisible();
     }
-    // the game loop must not have been duplicated by the replays: ~60 frames per second, not ~120+
-    const fps = await page.evaluate(() => new Promise((res) => { const g = window.__ssc.game, a = g.frameCount; setTimeout(() => res((g.frameCount - a)), 1000); }));
-    expect(fps).toBeLessThan(75);
-    expect(fps).toBeGreaterThan(25);
   });
 
   test('guest best score is kept in memory only: higher in round 2, lost on refresh', async ({ page }) => {
@@ -141,7 +142,8 @@ test.describe('Guest journey', () => {
     await waitForResults(page);
   });
 
-  test('controls: touch swipe and keyboard move Santa', async ({ page }) => {
+  test('controls: touch swipe and keyboard move Santa', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'touch events are injected through the Chrome DevTools Protocol');
     await enterAsGuest(page);
     await clickPlay(page);
     await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
@@ -173,6 +175,8 @@ test.describe('Guest journey', () => {
     });
     await page.goto('/');
     await page.waitForSelector('#introScreen', { timeout: 20_000 });
+    // Playwright's WebKit build for Windows has no Web Audio at all (real Safari does); the game guards it, so there is nothing to measure
+    test.skip(!(await page.evaluate(() => typeof (window.AudioContext || window.webkitAudioContext) === 'function')), 'this browser build has no Web Audio');
     expect(await page.evaluate(() => window.__audio.contexts)).toBe(0);        // nothing before a gesture
     await page.click('#introContinue');
     expect(await page.evaluate(() => window.__audio.contexts)).toBe(1);        // created by the first tap
@@ -189,7 +193,7 @@ test.describe('Guest journey', () => {
     expect(await page.evaluate(() => window.__audio.oscillators)).toBe(before); // muted: silent countdown
   });
 
-  test('background music: autoplays on the first tap, loops, follows the sound button, keeps playing through a round, stores nothing', async ({ page, context }) => {
+  test('background music: starts on landing, audible on the first tap, loops, follows the sound button, keeps playing through a round, stores nothing', async ({ page, context, browserName }) => {
     const res = await page.request.get('/assets/christmas-bg-music.mp3');
     expect(res.status()).toBe(200);
     expect(res.headers()['content-type']).toMatch(/audio\/mpeg|audio\/mp3/);
@@ -198,11 +202,19 @@ test.describe('Guest journey', () => {
     await page.waitForSelector('#introScreen', { timeout: 20_000 });
     const st = () => page.evaluate(() => {
       const m = window.__ssc.music, a = m.el;
-      return a ? { paused: a.paused, loop: a.loop, path: new URL(a.src).pathname, t: a.currentTime, dur: a.duration, vol: a.volume } : null;
+      return a ? { paused: a.paused, muted: a.muted, loop: a.loop, path: new URL(a.src).pathname, t: a.currentTime, dur: a.duration, vol: a.volume } : null;
     });
 
-    await page.click('#introContinue');                                       // the first tap anywhere unlocks audio
-    await expect.poll(async () => (await st())?.paused, { timeout: 15_000 }).toBe(false);
+    // Landing: the music is ALREADY running. Chrome/Edge run with the real autoplay policy here (audio needs a tap), so it
+    // must be playing silently (muted autoplay) until the first tap.
+    await expect.poll(async () => { const s = await st(); return !!s && !s.paused; }, { timeout: 20_000 }).toBe(true);
+    if (browserName === 'chromium') expect((await st()).muted).toBe(true);
+    const landing = await st();
+    await page.waitForTimeout(1200);
+    expect((await st()).t).toBeGreaterThan(landing.t);                       // genuinely advancing before any tap
+
+    await page.click('#introContinue');                                       // the first tap makes it audible
+    await expect.poll(async () => { const s = await st(); return !!s && !s.paused && !s.muted; }, { timeout: 15_000 }).toBe(true);
     const s0 = await st();
     expect(s0.path).toBe('/assets/christmas-bg-music.mp3');
     expect(s0.loop).toBe(true);                                               // loops

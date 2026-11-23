@@ -4,6 +4,7 @@ import App from './App.jsx';
 import './styles/game.css';
 import './styles/auth.css';
 import './styles/entry.css';
+import './styles/responsive.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
