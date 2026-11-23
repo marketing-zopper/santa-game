@@ -1,4 +1,4 @@
-/* Entry Mode screen (Google Sign-In / Play as Guest) and the small additions the new journey needs.
+/* Entry Mode screen (Sign In with OTP / Play as Guest) and the small additions the new journey needs.
  * Everything here is built from the original design tokens (--navy, --cream, --ice, --line, --orange, ...) and the
  * original sign-up sheet building blocks (.panel.headed, .p-head.reg-head, .reg-santa, .btn, .btn.light), so the new
  * screen reads as part of the same game. */
@@ -10,16 +10,11 @@
 .entry-head small{display:block;font-size:13.5px;font-weight:500;line-height:1.3;color:var(--muted)}
 .entry-ico{flex:none;width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:#fff;box-shadow:inset 0 0 0 1.5px #C7DDF6}
 .entry-ico.guest{background:var(--stone);color:var(--navy);box-shadow:none}
-.entry-ico.guest svg{width:24px;height:24px}
+.entry-ico.guest svg,.entry-ico.signin svg{width:24px;height:24px}
 .entry-card .btn{height:56px;font-size:22px}
 .entry-card .btn.light{font-size:20px}
 .entry-card .btn:focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
 
-/* Google "G" badge: stays in brand colours on any button */
-.g-badge{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(10,14,40,.28)}
-.g-badge svg,.btn .g-badge svg{width:18px;height:18px;filter:none}
-.entry-ico .g-badge{box-shadow:none;width:100%;height:100%;background:transparent}
-.entry-ico .g-badge svg{width:24px;height:24px}
 
 .p-body .reg-note a{color:#1B8FC0;font-weight:700}
 

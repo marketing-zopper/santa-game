@@ -1,37 +1,33 @@
-// Authentication state for the whole app (Supabase Auth, Google OAuth).
+// Authentication state for the whole app (Supabase Auth — WhatsApp OTP via Phone Auth).
 //
-//   status:   'loading' | 'signedOut' | 'signedIn'
-//   ready:    true once the stored session (or the OAuth redirect result) has been resolved and, for a signed-in
-//             player, their profile has been fetched — the loading screen waits for this
-//   profile:  { name, best, rank, total, ... } from the database (touch_profile), null for guests / signed-out
+//   status:   'loading'      session lookup / profile fetch in progress
+//             'signedOut'    no session
+//             'needsProfile' phone verified by OTP, registration (name + Croma region) not finished yet
+//             'signedIn'     verified player with a profile — scores are saved, leaderboard available
+//   ready:    true once the stored session has been resolved and, for a signed-in player, the profile fetched
+//   profile:  { name, region, best, rank, total, … } from the database (touch_profile), null for guests / signed-out
 //
 // Guests are NOT represented here at all: they never authenticate and never get a profile.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+// Only PHONE (WhatsApp OTP) sessions count as players. Any other session in the browser — e.g. the admin's Google session,
+// which shares the same storage — is simply ignored here (not signed out, not touched): the game treats it as signed out.
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { touchProfile } from '../services/gameService.js';
+import { completeRegistration as completeRegistrationRpc } from '../services/otpAuth.js';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
-/** Reads an OAuth failure Supabase puts in the URL (?error_description=... or #error_description=...) and cleans it up. */
-function takeOAuthError() {
-  try {
-    const q = new URLSearchParams(window.location.search), h = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const msg = q.get('error_description') || h.get('error_description') || q.get('error') || h.get('error');
-    if (msg) { window.history.replaceState({}, document.title, window.location.pathname); return msg.replace(/\+/g, ' '); }
-  } catch (e) { /* ignore */ }
-  return null;
-}
-
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null);
+  const [rawSession, setSession] = useState(null);
+  const session = rawSession && rawSession.user && rawSession.user.phone ? rawSession : null;   // players are phone accounts only
   const [resolved, setResolved] = useState(!supabase);       // session lookup finished
   const [profile, setProfile] = useState(null);
   const [profileDone, setProfileDone] = useState(!supabase); // profile fetch attempted for the current user
-  const [authError, setAuthError] = useState(() => takeOAuthError());
+  const version = useRef(0);                                 // newest profile write wins (a slow touch_profile must not undo a registration)
   const uid = session && session.user && session.user.id;
 
-  // 1) restore the stored session / finish the OAuth redirect, then follow auth changes
+  // 1) restore the stored session, then follow auth changes
   useEffect(() => {
     if (!supabase) return undefined;
     let alive = true;
@@ -39,56 +35,60 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(({ data }) => { if (alive) { setSession(data.session || null); setResolved(true); } })
       .catch(() => alive && setResolved(true));
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      // keep this callback synchronous: supabase-js must not be awaited from inside it
-      if (!alive) return;
+      if (!alive) return;                                    // keep this callback synchronous: supabase-js must not be awaited from inside it
       setSession(s || null); setResolved(true);
-      if (s && window.location.search.includes('code=')) window.history.replaceState({}, document.title, window.location.pathname);
     });
     return () => { alive = false; clearTimeout(guard); sub.subscription.unsubscribe(); };
   }, []);
 
-  // 2) when a player is signed in, create / refresh their profile row and load their standing
+  // 2) when someone is signed in, load their profile / standing
   useEffect(() => {
     if (!supabase || !resolved) return undefined;
-    if (!uid) { setProfile(null); setProfileDone(true); return undefined; }
-    setProfileDone(false);                              // (token refreshes keep the same uid, so this does not re-run)
+    if (!uid) { version.current++; setProfile(null); setProfileDone(true); return undefined; }
+    setProfileDone(false);                                   // (token refreshes keep the same uid, so this does not re-run)
+    const mine = ++version.current;
     let alive = true;
-    touchProfile().then((p) => alive && setProfile(p)).catch(() => {}).finally(() => alive && setProfileDone(true));
+    touchProfile().then((p) => { if (alive && mine === version.current) setProfile(p); }).catch(() => {})
+      .finally(() => { if (alive && mine === version.current) setProfileDone(true); });
     return () => { alive = false; };
   }, [uid, resolved]);
 
-  const signInWithGoogle = useCallback(async () => {
-    if (!supabase) return { error: 'Google sign-in is not configured for this build.' };
-    setAuthError(null);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + '/', queryParams: { prompt: 'select_account' } },
-    });
-    return { error: error ? error.message : null };
-  }, []);
-
   const signOut = useCallback(async () => {
     if (supabase) { try { await supabase.auth.signOut(); } catch (e) { /* ignore */ } }
+    version.current++;
     setSession(null); setProfile(null);
+  }, []);
+
+  /** Finish registration (new player) or restore the existing profile (returning player). Returns the profile row. */
+  const completeRegistration = useCallback(async (name, region) => {
+    const p = await completeRegistrationRpc(name, region);
+    version.current++;                                       // supersede any touch_profile still in flight
+    setProfile(p); setProfileDone(true);
+    return p;
   }, []);
 
   /** Merge fresh standing numbers (after a saved game) into the cached profile. */
   const updateStanding = useCallback((s) => setProfile((p) => ({ ...(p || {}), ...s })), []);
-  const refreshProfile = useCallback(() => touchProfile().then(setProfile).catch(() => {}), []);
+  const refreshProfile = useCallback(() => touchProfile().then((p) => { version.current++; setProfile(p); }).catch(() => {}), []);
 
   const value = useMemo(() => {
-    const status = !resolved ? 'loading' : session ? 'signedIn' : 'signedOut';
     const user = session ? session.user : null;
     const meta = (user && user.user_metadata) || {};
+    let status;
+    if (!resolved) status = 'loading';
+    else if (!session) status = 'signedOut';
+    else if (!profileDone) status = 'loading';
+    else if (profile && profile.registered === false) status = 'needsProfile';
+    else status = 'signedIn';                                // (also when the profile fetch failed offline: a valid session still counts)
     return {
       status, session, user, profile,
       ready: resolved && profileDone,
-      displayName: (profile && profile.name) || meta.full_name || meta.name || (user && user.email && user.email.split('@')[0]) || 'Player',
+      displayName: (profile && profile.name) || meta.full_name || meta.name || 'Player',
+      region: (profile && profile.region) || null,
       configured: !!supabase,
-      authError, clearAuthError: () => setAuthError(null),
-      signInWithGoogle, signOut, updateStanding, refreshProfile,
+      signOut, completeRegistration, updateStanding, refreshProfile,
     };
-  }, [resolved, session, profile, profileDone, authError, signInWithGoogle, signOut, updateStanding, refreshProfile]);
+  }, [resolved, session, profile, profileDone, signOut, completeRegistration, updateStanding, refreshProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

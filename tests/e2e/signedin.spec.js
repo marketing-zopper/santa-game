@@ -8,11 +8,11 @@ test.skip(!SERVICE_KEY, 'set SUPABASE_SERVICE_ROLE_KEY to run the signed-in test
 test.describe.configure({ mode: 'serial' });
 
 let user;
-test.beforeAll(async () => { user = await makeTestUser('player', 'E2E Player Test'); });
+test.beforeAll(async () => { user = await makeTestUser('player', 'E2E Player Test', { region: 'Croma West Region' }); });
 test.afterAll(async () => { if (user) await user.cleanup(); });
 
-const games = async () => (await user.admin.from('games').select('id, score, client_score, flagged, flag_reason, session_id').eq('player_id', user.id).order('created_at')).data;
-const profile = async () => (await user.admin.from('profiles').select('best_score, games_played, display_name').eq('id', user.id).single()).data;
+const games = async () => (await user.admin.from('games').select('id, score, client_score, flagged, flag_reason, session_id, region').eq('player_id', user.id).order('created_at')).data;
+const profile = async () => (await user.admin.from('profiles').select('best_score, games_played, display_name, region, phone, auth_provider').eq('id', user.id).single()).data;
 const playRound = async (page, btn = '#playBtn', ms = 7500) => {
   await clickPlay(page, btn);
   await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 20_000 });
@@ -30,7 +30,10 @@ test('returning user: valid session skips intro + entry and lands on Game Home w
   await expect(page.locator('#playerName')).toHaveText('E2E Player Test');
   await expect(page.locator('#playerChip')).toContainText('Sign out');
   await expect(page.locator('#leaderBtn')).toBeVisible();
-  expect((await profile()).display_name).toBe('E2E Player Test');             // profile row exists (created at sign-in)
+  const pr = await profile();
+  expect(pr.display_name).toBe('E2E Player Test');                             // profile row exists (created at registration)
+  expect(pr.region).toBe('Croma West Region');
+  expect(pr.auth_provider).toBe('phone');
 });
 
 test('signed-in round: server-issued session, validated score saved, rank shown, personal best updated', async ({ page, context }) => {
@@ -48,7 +51,9 @@ test('signed-in round: server-issued session, validated score saved, rank shown,
   expect(g).toHaveLength(1);
   expect(g[0].score).toBe(score);                                              // the server replayed the game and agrees
   expect(g[0].flagged).toBe(false);
+  expect(g[0].region).toBe('Croma West Region');                               // region snapshot on the game
   expect((await profile()).best_score).toBe(score);
+  await expect(page.locator('#resultSignInBtn')).toHaveCount(0);                // no redundant Sign In button for an authenticated player
   await expect(page.locator('#result .r-rank')).toBeVisible();                 // ranked
   await expect(page.locator('#resultLeaderBtn')).toBeVisible();                // leaderboard offered to signed-in players
   await expect(page.locator('#stBest')).toHaveText(String(score));
@@ -144,7 +149,23 @@ test('retry safety: response lost after the server saved → queued, retried on 
   expect((await games()).length).toBe(before + 1);                             // retry was recognised as a duplicate
 });
 
-test('Google sign-in is stored: session key present for the player, sign-out returns to Entry and clears it', async ({ page, context }) => {
+test('a dropped connection is retried: one failed start-game and one failed finish-game do not cost the player a saved round', async ({ page, context }) => {
+  await injectSession(context, user.session);
+  const attempts = { start: 0, finish: 0 };
+  await page.route('**/functions/v1/start-game', (route) => (++attempts.start === 1 ? route.abort('connectionreset') : route.continue()));
+  await page.route('**/functions/v1/finish-game', (route) => (++attempts.finish === 1 ? route.abort('connectionreset') : route.continue()));
+  await page.goto('/');
+  await homeReady(page);
+  const before = (await games()).length;
+  await playRound(page);
+  await expect(page.locator('#result')).toContainText('Your best:', { timeout: 25_000 });   // saved — not "Practice round", not "saved on this phone"
+  await expect(page.locator('#result')).not.toContainText('Practice');
+  expect(attempts.start).toBe(2);                                                           // retried once, then succeeded
+  expect(attempts.finish).toBe(2);
+  expect((await games()).length).toBe(before + 1);                                          // exactly one saved game
+});
+
+test('session is stored for the player; sign-out returns to Entry and clears it', async ({ page, context }) => {
   await injectSession(context, user.session);
   await page.goto('/');
   await homeReady(page);
@@ -161,4 +182,29 @@ test('signed-out visitor cannot reach leaderboard data (RPC refuses)', async ({ 
   await page.goto('/');
   const status = await page.evaluate(async ([url, key]) => (await fetch(`${url}/rest/v1/rpc/get_leaderboard`, { method: 'POST', headers: { apikey: key, 'Content-Type': 'application/json' }, body: '{}' })).status, [SUPABASE_URL, ANON_KEY]);
   expect([401, 403]).toContain(status);
+});
+
+test.describe('Google is for the admin dashboard only', () => {
+  test('a leftover Google session in the browser is IGNORED by the game: treated as signed out, nothing created, nothing signed out', async ({ page, context }) => {
+    const g = await makeTestUser('googleonly', 'Admin Like Google', { kind: 'google' });
+    try {
+      await injectSession(context, g.session);
+      await page.goto('/');
+      await page.waitForSelector('#introScreen', { timeout: 25_000 });                 // a normal new visitor: intro, not Game Home
+      await expect(page.locator('#startScreen')).toHaveCount(0);
+      await page.click('#introContinue');
+      await page.waitForSelector('#entrySheet');
+      await expect(page.locator('#signInBtn')).toHaveText('Sign In with OTP');
+      await expect(page.locator('#googleBtn')).toHaveCount(0);
+      expect(await page.locator('body').innerText()).not.toMatch(/google/i);
+      // the game never created a player profile for the Google account, and did not touch the stored session (the admin may still need it)
+      expect((await g.admin.from('profiles').select('id').eq('id', g.id).maybeSingle()).data).toBeNull();
+      expect(await page.evaluate((k) => !!localStorage.getItem(k), STORAGE_KEY)).toBe(true);
+      // guests can still play normally in that same browser
+      await page.click('#guestBtn');
+      await homeReady(page);
+      await expect(page.locator('#leaderBtn')).toHaveCount(0);
+      await expect(page.locator('#playerName')).toHaveText('Guest');
+    } finally { await g.cleanup(); }
+  });
 });

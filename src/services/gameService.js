@@ -4,10 +4,10 @@ import { store } from '../lib/storage.js';
 import { callFunction, ApiError } from './api.js';
 
 /** Begin an authorised game: the server picks the seed so it can re-play the finished game. */
-export const startSession = () => callFunction('start-game', {}, 7000);
+export const startSession = () => callFunction('start-game', {}, 7000, { retries: 1 });
 
 /** Submit the recorded moves; the server re-plays the game and saves ITS score. Safe to retry (idempotent). */
-export const finishSession = (payload) => callFunction('finish-game', payload, 15000);
+export const finishSession = (payload) => callFunction('finish-game', payload, 15000, { retries: 2 });
 
 /** Create/refresh the profile after sign-in and return { name, best, rank, total, ... }. */
 export async function touchProfile() {

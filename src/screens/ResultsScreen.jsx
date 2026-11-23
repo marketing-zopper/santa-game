@@ -1,7 +1,7 @@
 // Step 8 of the journey: RESULTS — current-round performance.
 //
 //   signed-in → "Score synced" result (rank / personal best from the server), Play again + Leaderboard
-//   guest     → "not saved" note, Play again only (NO leaderboard button)
+//   guest     → "not saved" note, Play again + "Sign In with OTP" (NO leaderboard button until they authenticate)
 // The panel is the original game-over panel (score, result card, stats, Zopper promo).
 import { PlayIcon } from '../components/icons.jsx';
 
@@ -10,7 +10,7 @@ function ResultBox({ result, score, prevBest }) {
     return (
       <div className="result" id="result">
         <div className="r-title">Guest round</div>
-        <div className="r-sub">This score isn't saved. Sign in with Google from the main menu to keep your scores.</div>
+        <div className="r-sub">This round isn't saved. Want to save your future scores and climb the leaderboard? Sign in to compete!</div>
       </div>
     );
   }
@@ -54,8 +54,8 @@ function ResultBox({ result, score, prevBest }) {
   );
 }
 
-export default function ResultsScreen({ mode, round, onAgain, onHome, onLeaderboard }) {
-  const signedIn = mode === 'google';
+export default function ResultsScreen({ mode, round, onAgain, onHome, onLeaderboard, onSignIn }) {
+  const signedIn = mode === 'player';
   const { summary, result, prevBest, best } = round;
   return (
     <div className="screen" id="overScreen">
@@ -78,7 +78,11 @@ export default function ResultsScreen({ mode, round, onAgain, onHome, onLeaderbo
               <button className="btn light" id="homeBtn" onClick={onHome}>Main menu</button>
             </div>
           ) : (
-            <button className="btn light" id="homeBtn" onClick={onHome}>Main menu</button>
+            <>
+              {/* guest: the finished round stays a guest round — signing in only applies to NEW games */}
+              <button className="btn light" id="resultSignInBtn" onClick={onSignIn}>Sign In with OTP</button>
+              <button className="btn light" id="homeBtn" onClick={onHome}>Main menu</button>
+            </>
           )}
         </div>
       </div>

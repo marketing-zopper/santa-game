@@ -3,13 +3,15 @@
 //
 //   GET  ?action=whoami
 //   GET  ?action=stats
-//   GET  ?action=leaderboard|players|games &q=&verified=all|yes|no &flagged=1 &player=<id> &limit=&offset=
-//   GET  ?action=export&type=leaderboard|players|games          (CSV download, same filters)
+//   GET  ?action=leaderboard|players|games &q=&verified=all|yes|no &region=all|legacy|<Croma region> &flagged=1 &player=<id> &limit=&offset=
+//   GET  ?action=regions                                         (region-wise report: players, games, valid games, avg / top score)
+//   GET  ?action=export&type=leaderboard|players|games|regions   (CSV download, same filters)
 //   GET  ?action=health                                          (which optional integrations are configured)
 //   POST ?action=disqualify  { id, value: true|false }
 //   POST ?action=test-email  { to }                              (sends a sample thank-you email)
 import { handler, json, serviceClient, requireUser, readJson, HttpError, corsHeaders, isUuid, isGoogleVerified } from '../_shared/common.js';
 import { emailConfig, emailConfigured, sendEmail, thanksEmail } from '../_shared/email.js';
+import { REGIONS } from '../_shared/regions.js';
 
 async function requireAdmin(req, db) {
   const user = await requireUser(req, db);
@@ -26,7 +28,10 @@ function listArgs(u, all) {
   const offset = Math.max(0, parseInt(u.searchParams.get('offset'), 10) || 0);
   const verified = ['yes', 'no'].includes(u.searchParams.get('verified')) ? u.searchParams.get('verified') : 'all';
   const pid = u.searchParams.get('player');
+  const r = u.searchParams.get('region');
+  if (r && r !== 'all' && r !== 'legacy' && !REGIONS.includes(r)) throw new HttpError(400, 'Unknown region');
   return {
+    p_region: r && r !== 'all' ? r : null,
     p_q: (u.searchParams.get('q') || '').slice(0, 80), p_verified: verified,
     p_flagged: u.searchParams.get('flagged') === '1', p_player: pid && isUuid(pid) ? pid : null,
     p_limit: all ? null : limit, p_offset: all ? 0 : offset,
@@ -40,9 +45,10 @@ async function list(db, kind, u, all) {
 
 // Column order of each CSV export (the database returns JSON objects, whose key order is not meaningful).
 const CSV_COLUMNS = {
-  leaderboard: ['rank', 'official_rank', 'display_name', 'email', 'email_verified', 'best_score', 'best_at', 'games_played', 'total_score', 'city', 'region', 'country', 'lat', 'lng', 'location_source', 'created_at', 'last_seen_at', 'disqualified', 'id'],
-  players: ['display_name', 'email', 'email_verified', 'created_at', 'last_seen_at', 'best_score', 'best_at', 'rank', 'games_played', 'total_score', 'city', 'region', 'country', 'ip_city', 'ip_region', 'lat', 'lng', 'location_accuracy_m', 'location_source', 'thanks_sent_at', 'disqualified', 'consent_at', 'id'],
-  games: ['created_at', 'display_name', 'email', 'score', 'client_score', 'duration_s', 'phones_caught', 'flagged', 'flag_reason', 'city', 'ip_city', 'lat', 'lng', 'email_verified', 'player_id', 'id'],
+  leaderboard: ['rank', 'official_rank', 'display_name', 'phone', 'email', 'region', 'auth_provider', 'verified', 'best_score', 'best_at', 'games_played', 'total_score', 'city', 'geo_region', 'country', 'lat', 'lng', 'location_source', 'created_at', 'last_seen_at', 'disqualified', 'id'],
+  players: ['display_name', 'phone', 'email', 'region', 'auth_provider', 'verified', 'created_at', 'registered_at', 'last_seen_at', 'best_score', 'best_at', 'rank', 'games_played', 'total_score', 'city', 'geo_region', 'country', 'ip_city', 'ip_region', 'lat', 'lng', 'location_accuracy_m', 'location_source', 'thanks_sent_at', 'disqualified', 'consent_at', 'id'],
+  games: ['created_at', 'display_name', 'phone', 'email', 'region', 'score', 'client_score', 'duration_s', 'phones_caught', 'flagged', 'flag_reason', 'city', 'ip_city', 'lat', 'lng', 'verified', 'player_id', 'id'],
+  regions: ['region', 'players', 'games', 'valid_games', 'avg_score', 'top_score', 'best_player_score'],
 };
 
 function csv(rows, cols) {
@@ -92,11 +98,18 @@ Deno.serve(handler(['GET', 'POST'], async (req) => {
     if (error) throw error;
     return json(200, data);
   }
+  if (action === 'regions') {
+    const { data, error } = await db.rpc('admin_region_report');
+    if (error) throw error;
+    return json(200, { rows: data });
+  }
   if (action === 'leaderboard' || action === 'players' || action === 'games') return json(200, await list(db, action, u, false));
   if (action === 'export') {
     const type = u.searchParams.get('type');
-    if (!['leaderboard', 'players', 'games'].includes(type)) throw new HttpError(400, 'Unknown export');
-    const { rows } = await list(db, type, u, true);
+    if (!['leaderboard', 'players', 'games', 'regions'].includes(type)) throw new HttpError(400, 'Unknown export');
+    let rows;
+    if (type === 'regions') { const r = await db.rpc('admin_region_report'); if (r.error) throw r.error; rows = r.data; }
+    else ({ rows } = await list(db, type, u, true));
     const stamp = new Date().toISOString().slice(0, 10);
     return new Response('\uFEFF' + csv(rows, CSV_COLUMNS[type]), {
       status: 200,

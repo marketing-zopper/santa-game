@@ -14,3 +14,8 @@ entrypoint = "./functions/finish-game/index.js"
 [functions.admin]
 verify_jwt = false
 entrypoint = "./functions/admin/index.js"
+
+# Called by Supabase Auth (signed with the Standard Webhooks scheme), not by browsers: no JWT, signature is verified in code.
+[functions.send-sms]
+verify_jwt = false
+entrypoint = "./functions/send-sms/index.js"

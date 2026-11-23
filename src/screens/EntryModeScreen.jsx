@@ -1,21 +1,12 @@
-// Step 4 of the journey: CHOOSE ENTRY MODE — Google Sign-In or Play as Guest.
+// Step 4 of the journey: CHOOSE ENTRY MODE — Sign In (WhatsApp OTP) or Play as Guest.
 //
 // Visual language is the original sign-up sheet (night-sky header with Santa peeking, cream body, the same buttons and
-// cards); only the content is new. This replaces the retired name / email / mobile + email-OTP onboarding.
-import { useState } from 'react';
+// cards). "Sign In" opens the shared registration + OTP flow (AuthSheet); "Play as Guest" goes straight to Game Home.
 import Sheet from '../components/Sheet.jsx';
-import { BackIcon, GoogleBadge, GuestIcon, PinIcon } from '../components/icons.jsx';
+import { BackIcon, ChatIcon, GuestIcon, PinIcon } from '../components/icons.jsx';
 import { CAMPAIGN } from '../lib/campaign.js';
 
-export default function EntryModeScreen({ googleAvailable, error, onGoogle, onGuest, onBack }) {
-  const [busy, setBusy] = useState(false);
-
-  const google = async () => {
-    setBusy(true);
-    const r = await onGoogle();          // on success the browser leaves for Google; only a failure returns here
-    if (r && r.error) setBusy(false);
-  };
-
+export default function EntryModeScreen({ signInAvailable, onSignIn, onGuest, onBack }) {
   return (
     <Sheet locked>
       <div className="panel headed sheet-panel has-back" role="dialog" aria-labelledby="entryTitle" id="entrySheet">
@@ -26,14 +17,12 @@ export default function EntryModeScreen({ googleAvailable, error, onGoogle, onGu
           <h2 className="reg-title" id="entryTitle"><i>Choose how</i><span>to play</span></h2>
         </div>
         <div className="p-body">
-          <section className="entry-card recommended" aria-label="Google Sign-In">
+          <section className="entry-card recommended" aria-label="Sign In">
             <div className="entry-head">
-              <span className="entry-ico google"><GoogleBadge /></span>
-              <span><b>Google Sign-In</b><small>Scores saved · Leaderboard &amp; prizes</small></span>
+              <span className="entry-ico signin"><ChatIcon /></span>
+              <span><b>Sign In</b><small>WhatsApp OTP · Scores saved · Leaderboard &amp; prizes</small></span>
             </div>
-            <button className="btn" id="googleBtn" type="button" onClick={google} disabled={busy || !googleAvailable}>
-              <GoogleBadge /><span>{busy ? 'Opening Google…' : 'Sign in with Google'}</span>
-            </button>
+            <button className="btn" id="signInBtn" type="button" onClick={onSignIn} disabled={!signInAvailable}><span>Sign In with OTP</span></button>
           </section>
 
           <section className="entry-card" aria-label="Play as Guest">
@@ -44,11 +33,10 @@ export default function EntryModeScreen({ googleAvailable, error, onGoogle, onGu
             <button className="btn light" id="guestBtn" type="button" onClick={onGuest}>Play as Guest</button>
           </section>
 
-          {error ? <p className="form-err" id="entryErr" role="alert">{error}</p> : null}
-          {!googleAvailable && !error ? <p className="form-err" role="alert">Google sign-in isn&rsquo;t available right now. You can still play as a guest.</p> : null}
+          {!signInAvailable ? <p className="form-err" role="alert">Sign-in isn&rsquo;t available right now. You can still play as a guest.</p> : null}
 
           <p className="reg-note"><PinIcon />
-            <span>Signing in lets Zopper store your name, email, scores and (if you allow it) city to run the contest and contact winners.
+            <span>Signing in lets Zopper store your name, WhatsApp number, store region and scores (and your city, if you allow it) to run the contest and contact winners.
               {CAMPAIGN.termsUrl ? <> <a href={CAMPAIGN.termsUrl} target="_blank" rel="noopener">Terms</a>.</> : null} Guests aren&rsquo;t tracked and nothing is saved.</span>
           </p>
         </div>

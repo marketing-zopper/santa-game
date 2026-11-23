@@ -49,17 +49,27 @@ export const CrownIcon = ({ rank }) => (
   <svg viewBox="0 0 30 24" aria-hidden="true"><path d="M3 7l6.5 5.5L15 3l5.5 9.5L27 7l-2.5 14h-19z" fill={CROWN[rank]} /></svg>
 );
 
-/** Google "G" on a white badge, so it keeps its brand colours on any button background. */
-export const GoogleBadge = () => (
-  <span className="g-badge" aria-hidden="true">
-    <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z" /><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.6 5.9c4.4-4.1 7-10.1 7-17.6z" /><path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z" /><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z" /></svg>
-  </span>
-);
-
 export const GuestIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="currentColor" /><path d="M4 21a8 8 0 0 1 16 0z" fill="currentColor" /></svg>
 );
 
 export const PinIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor" /></svg>
+);
+
+export const UserIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="currentColor" /><path d="M4 21a8 8 0 0 1 16 0z" fill="currentColor" /></svg>
+);
+
+export const MapPinIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor" /></svg>
+);
+
+export const ChevronDownIcon = () => (
+  <svg className="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
+/** Chat bubble with a phone handset — the "WhatsApp OTP" sign-in card icon */
+export const ChatIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 0 0-8.1 14.4L2.7 21.3l4.5-1.2A9.5 9.5 0 1 0 12 2.5z" fill="#25D366" /><path d="M8.6 7.6c.2-.4.5-.4.7-.4h.5c.2 0 .4.1.5.4l.8 1.8c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3 0 .5.5.9 1.3 1.6 2.2 2 .2.1.4.1.5-.1l.6-.7c.2-.2.4-.2.6-.1l1.7.8c.2.1.3.3.3.5 0 .6-.3 1.3-.9 1.6-.5.3-1.1.4-1.8.2-2.7-.7-4.6-2.4-5.6-4.7-.3-.7-.2-1.5.4-2.3z" fill="#fff" /></svg>
 );

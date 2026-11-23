@@ -1,228 +1,222 @@
 # Santa's Safe Catch · Zopper Christmas Challenge
 
-In-store mobile game: swipe to move Santa and catch falling phones in his sack. This repo is the **React + Vite +
-Supabase** version of the original game (`marketing-zopper/Santa-Safe-Catch`). The game itself — artwork, CSS, canvas
-engine, rules, sounds — is the original, migrated unchanged. What changed is the technology underneath, sign-in, the
-back end and the player journey.
+In-store mobile game: swipe to move Santa and catch falling phones in his sack. React + Vite + Supabase version of the
+original game (`marketing-zopper/Santa-Safe-Catch`). The game itself — artwork, CSS, canvas engine, rules, sounds — is the
+original. Players **sign in with a WhatsApp OTP** (delivered through WATI) and register their **Croma region**, or play as a guest.
 
 ```
- Scan QR → Loading → Introduction → Choose entry mode ─┬─ Google Sign-In ─┐
-                                                       └─ Play as Guest ──┴→ Game Home → Start game
- → Game Over → Results ─┬─ Play again
-                        └─ Leaderboard   (signed-in players only)
+ Scan QR → Loading → Introduction → Choose entry mode ─┬─ Sign In with OTP → Registration form → WhatsApp OTP → Verify ─┐
+                                                       └─ Play as Guest ──────────────────────────────────────────────┴→ Game Home
+ → Start game → Gameplay → Game Over → Results ─┬─ Play again
+                                                ├─ Leaderboard        (signed-in players only)
+                                                └─ Sign In with OTP   (guests only — the finished round stays a guest round)
 ```
 
-| | Signed in with Google | Guest |
+| | Signed in (WhatsApp OTP) | Guest |
 |---|---|---|
 | Gameplay, difficulty, scoring | identical | identical |
-| Score saved | Yes — validated on the server, stored in Supabase | **No** — memory only, lost on refresh |
-| Leaderboard / prizes | Yes | **None** — no button, no screen, no data |
+| Score saved | Yes — validated on the server, stored in Supabase with the player's **Croma region** | **No** — memory only, lost on refresh |
+| Leaderboard / prizes | Yes (one global leaderboard) | **None** — no button, no screen, no data, until they sign in |
 | Database profile / history | Yes | **None** |
-| Browser storage | sound preference, offline retry queue | **nothing** (no localStorage, sessionStorage, cookies) |
-| Network calls to Supabase | yes | **none** |
+| Browser storage | session, sound preference, offline retry queue | **nothing** |
+| Network calls to Supabase | yes | **none** until they choose to sign in |
+
+A guest who signs in from the result screen is taken to Game Home as an authenticated player. **The round they just played
+is never saved, counted or attached to the account**; only games started after sign-in are saved.
 
 ## Contents
-- [Architecture](#architecture) · [Repository layout](#repository-layout)
-- [Local setup](#local-setup)
-- [Supabase setup](#supabase-setup) (database, Edge Functions, secrets)
-- [Google sign-in setup](#google-sign-in-setup)
-- [Admin dashboard](#admin-dashboard)
-- [Deploying to Vercel](#deploying-to-vercel)
-- [How scores are protected](#how-scores-are-protected)
-- [Testing](#testing)
-- [Environment variables](#environment-variables)
-- [Troubleshooting](#troubleshooting)
+[Architecture](#architecture) · [Layout](#repository-layout) · [Local setup](#local-setup) · [Supabase setup](#supabase-setup) ·
+[WhatsApp OTP setup (WATI)](#whatsapp-otp-setup-wati) · [Croma regions & reporting](#croma-regions--reporting) ·
+[Admin dashboard](#admin-dashboard) · [Deploying to Vercel](#deploying-to-vercel) · [How scores are protected](#how-scores-are-protected) ·
+[Testing](#testing) · [Environment variables](#environment-variables) · [Troubleshooting](#troubleshooting)
 
 ## Architecture
 
-- **React 19 + Vite (JavaScript, no TypeScript, no UI framework).** React owns the screens, navigation, auth and the
-  results; the Canvas game is an imperative class (`src/game/GameController.js`) with **one** `requestAnimationFrame`
-  loop outside React. React is only called back on discrete events (score/lives changed, banner, countdown, pause,
-  game over), never per frame. `destroy()` removes every listener and timer.
-- **One engine, two runtimes.** `supabase/functions/_shared/engine.js` is the original deterministic engine (fixed 60
-  ticks/s, seeded RNG). The browser imports it through `src/game/engine.js`; the `finish-game` Edge Function imports the
-  very same file to re-play and validate every signed-in game.
-- **Supabase Auth** (Google OAuth, PKCE) · **Postgres** (profiles, sessions, games; RLS on everything) · **Edge
-  Functions** (`start-game`, `finish-game`, `admin`, plain JavaScript).
-- **Vercel** hosts the static front end (`/` = game, `/admin` = dashboard).
+- **React 19 + Vite (JavaScript).** React owns screens, navigation, auth and results; the Canvas game is an imperative class
+  (`src/game/GameController.js`) with **one** `requestAnimationFrame` loop outside React.
+- **One engine, two runtimes.** `supabase/functions/_shared/engine.js` is the deterministic game engine. The browser imports
+  it through `src/game/engine.js`; `finish-game` replays every signed-in game with the very same file.
+- **Supabase Phone Auth** generates, stores, expires, rate-limits and *verifies* the OTP and issues the session.
+  The **Send SMS Auth Hook** (`send-sms` Edge Function) only *delivers* the code: it sends the approved WhatsApp
+  authentication template through **WATI** instead of an SMS. The hook never sees a session and cannot grant access.
+- **Registration happens after verification.** A verified phone alone creates no profile. `complete_registration(name, region)`
+  (server-side, `SECURITY DEFINER`) creates it, takes the phone number from the verified auth record (never from the client),
+  and never overwrites an existing profile — so a returning player's name and region are always preserved.
+- **Postgres + RLS** (profiles, sessions, games, regions) · **Edge Functions** `start-game`, `finish-game`, `admin`, `send-sms`.
+- **Background music.** `public/assets/christmas-bg-music.mp3` loops quietly (`src/game/music.js`, a plain audio element separate from the synthesised sound effects). Browsers refuse audio before a tap, so it starts on the player's first tap (the intro's Continue) — or immediately if the browser allows it — and is only fetched after the loading screen. The top-right sound button toggles music and sound effects together (pause / play); pausing the *game* does not stop the music; it also pauses while the tab is hidden. Nothing is stored for guests.
+- **Shared form code.** The registration + OTP screen (`src/screens/AuthSheet.jsx`) is a single component used by Entry Mode,
+  Game Home and the guest Result screen.
+- **Google sign-in exists ONLY on `/admin`**, for exactly one allow-listed admin (`marketingext@zopper.com`). Players never see it; a
+  Google account never gets a player profile and can never play, start a game, or see the leaderboard. Historical Google players
+  and their scores stay in the database as history (`auth_provider = 'google'`, `region = NULL`) and on the leaderboard; they
+  would register with a phone number like anyone else (accounts are never merged automatically).
 
 ## Repository layout
 
 ```
 src/
-  App.jsx                 journey state machine + bridge to the game
+  App.jsx                 journey state machine, guest/player split, shared sign-in sheet wiring
   game/                   GameController (canvas, input, FX), draw, sprites, audio, engine re-export
-  screens/                Loading, Intro, EntryMode, Home, HowToPlay, Leaderboard, Pause, Results
-  components/             Hud, Sheet, icons
-  contexts/               AuthContext (Supabase session + profile), ToastContext
-  services/               api (Edge Function calls), gameService (start/finish/leaderboard/retry queue), location
-  lib/                    supabase client, campaign copy, safe storage
-  styles/                 game.css (original CSS), entry.css (Entry Mode + small-phone fixes)
-  admin/                  React admin dashboard + admin.css (original admin CSS)
-public/                   original artwork (assets/) and Mona Sans font
+  screens/                Loading, Intro, EntryMode, AuthSheet (registration + OTP), Home, HowToPlay, Leaderboard, Pause, Results
+  contexts/               AuthContext (session + profile; status signedOut | needsProfile | signedIn)
+  services/               otpAuth (send/verify OTP, register), gameService, api, location
+  lib/                    supabase client, phone + regions (re-exports of the shared server modules), campaign copy
+  styles/                 game.css (original), auth.css (original sign-up/OTP rules, restored), entry.css
+  admin/                  React admin dashboard
 supabase/
-  migrations/             SQL: schema + RLS + functions; Google-only hardening
-  functions/              start-game, finish-game, admin, _shared (engine, common, email)
-  config.toml
-tests/                    engine parity (Vitest) + browser tests (Playwright)
-scripts/verify-backend.mjs  end-to-end check of the live Supabase backend
-docs/MIGRATION.md         feature inventory, file mapping, parity checklist, decisions, test report
+  migrations/             001 core schema · 002 google-only (historical) · 003 phone auth + regions · 004 Google = admin only
+  functions/              start-game, finish-game, admin, send-sms, _shared (engine, common, email, phone, regions, wati)
+scripts/                  configure-phone-auth.mjs · test-otp.mjs · verify-backend.mjs
+tests/                    unit (Vitest) + browser (Playwright)
+docs/                     MIGRATION.md (React/Supabase migration) · WATI_OTP_REGIONS.md (this update)
 ```
 
 ## Local setup
 
-Requires Node 20+.
+Node 20+.
 
 ```bash
 npm install
-cp .env.example .env.local        # then fill in the two VITE_SUPABASE_* values
-npm run dev                       # http://localhost:5173
+cp .env.example .env.local        # fill VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
+npm run dev                       # http://localhost:5173   (admin at /admin)
 ```
 
-The game also runs with **no** Supabase configuration at all: guest play works; the Google button is disabled with an
-explanation. Open `http://localhost:5173/admin` for the dashboard.
-
-Other scripts: `npm run build` · `npm run preview` · `npm test` (unit) · `npm run test:e2e` (browser) ·
-`npm run verify:backend` (live backend checks).
+Guest play works with no Supabase configuration at all. Scripts: `npm run build` · `npm test` · `npm run test:e2e` · `npm run verify:backend`.
 
 ## Supabase setup
 
-You need a Supabase project (the migrations and functions in this repo are already applied to
-`fyjovgxvyuynlgjjucut`; do the steps below for any new project).
+For the existing project everything below is already applied. For a new project:
 
-### 1. Database
+1. **Database** — run the migrations in order (SQL Editor, or `npx supabase db push`):
 
-Run the migrations in order, either in the Supabase **SQL Editor** (paste each file and *Run*) or with the CLI:
+   | Migration | Purpose |
+   |---|---|
+   | `20261120000001_core_schema.sql` | tables, RLS, grants, leaderboard, server functions |
+   | `20261120000002_google_only.sql` | historical: "verified" = Google identity |
+   | `20261123000004_google_admin_only.sql` | removes the Google auth trigger (Google accounts never get a profile); only phone players can start games / read the leaderboard; admin allow-list = exactly `marketingext@zopper.com` |
+   | `20261123000003_phone_auth_regions.sql` | `regions` (exactly four), phone / region / timestamps on `profiles`, region snapshot on `game_sessions` + `games`, `complete_registration`, region reporting, OTP send cap. **Additive — existing players, scores and games are untouched** (the old GPS "region" column is preserved as `geo_region`) |
 
-```bash
-npx supabase login
-npx supabase link --project-ref <ref>
-npx supabase db push
-```
+2. **Edge Functions** — `npx supabase functions deploy --project-ref <ref> --use-api`
+   (`verify_jwt = false` in `supabase/config.toml`: the player/admin functions verify the caller's token themselves; `send-sms`
+   verifies Supabase's signature).
+3. **Turn on WhatsApp OTP** — see the next section (one command).
+4. **Auth → URL Configuration** — Site URL = your production URL; add `https://<your-domain>/**` to Redirect URLs (needed for the **admin** Google login to come back to `/admin`).
+5. **Anonymous sign-ins stay OFF** — guests must have no database presence.
 
-| Migration | What it does |
-|---|---|
-| `20261120000001_core_schema.sql` | tables (`profiles`, `game_sessions`, `games`, `admin_users`, `email_log`), indexes, RLS, grants, auth trigger, leaderboard view, `touch_profile`, `get_leaderboard`, `start_session`, `record_game`, `admin_stats`, `admin_list` |
-| `20261120000002_google_only.sql` | "verified" now means *Google-verified*: only Google accounts can start games, rank, or use the admin dashboard — even if the Email provider is left on |
+## WhatsApp OTP setup (WATI)
 
-### 2. Edge Functions
+**Prerequisites in WATI:** an **approved WhatsApp *Authentication* template** whose body contains the `{{1}}` OTP placeholder.
+This project uses `sec_otpverify` (language `en_US`, "`{{1}} is your verification code…`", Copy-code button, 10-minute validity),
+verified from the connected WATI account. WATI API v1 is used (`/api/v1/getMessageTemplates`, `/api/v1/sendTemplateMessage`).
 
-```bash
-npx supabase functions deploy --project-ref <ref> --use-api     # start-game, finish-game, admin
-```
-
-They are deployed with `verify_jwt = false` (see `supabase/config.toml`) and verify the caller's access token
-themselves (`auth.getUser`), which works with any JWT signing key. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are
-injected by Supabase — **never** put the service-role key in the front end or in this repo.
-
-### 3. Edge Function secrets (all optional)
-
-Only needed for the first-game thank-you email. Without them nothing is sent and everything else works.
+**One command** (secrets come from your shell — nothing is stored in git):
 
 ```bash
-npx supabase secrets set --project-ref <ref> \
-  BREVO_API_KEY=... EMAIL_FROM=christmas@your-domain.com EMAIL_FROM_NAME="Zopper Christmas Challenge" \
-  GAME_URL=https://your-game-url KNOW_MORE_URL=https://... TERMS_URL=https://... CAMPAIGN_END="31 December 2026"
+npx supabase functions deploy --project-ref <ref> --use-api
+SUPABASE_ACCESS_TOKEN=sbp_…  SUPABASE_PROJECT_REF=<ref> \
+WATI_API_TOKEN=…  WATI_API_BASE_URL=https://live-mt-server.wati.io/<tenant-id> \
+WATI_AUTH_TEMPLATE_NAME=sec_otpverify  WATI_AUTH_TEMPLATE_LANGUAGE=en_US \
+node scripts/configure-phone-auth.mjs
 ```
 
-SMTP instead of Brevo: `SMTP_HOST`, `SMTP_PORT` (**use 465** — Supabase Edge Functions block outbound ports 25 and 587),
-`SMTP_USER`, `SMTP_PASS`. `SKIP_TIME_CHECK=1` disables the faster-than-real-time check (testing only).
+It stores `WATI_API_TOKEN`, `WATI_API_BASE_URL`, `WATI_AUTH_TEMPLATE_NAME`, `WATI_AUTH_TEMPLATE_LANGUAGE` and a freshly generated
+`SEND_SMS_HOOK_SECRET` as **Edge Function secrets**, then enables Phone Auth (6-digit OTP, **10-minute expiry**, **60 s resend
+cooldown**, 300 codes/hour project-wide) and the **Send SMS hook** → `/functions/v1/send-sms`. The WATI token never reaches
+React, Vite variables, GitHub or logs (error messages are scrubbed of token and OTP).
 
-### 4. Auth configuration
+**What protects WhatsApp spend / the number book**
+- Only Indian mobiles (`+91 [6-9]xxxxxxxxx`) are accepted — form, Supabase and the hook all enforce it.
+- Supabase: 1 code per number per 60 s, 300/hour project-wide, verification attempts rate-limited, codes expire in 10 minutes.
+- Hook: max **5 codes per number per hour** (`hook_allow_otp`), checked before a WhatsApp message is spent; hard 4 s budget
+  for the WATI call (Supabase allows hooks only 5 s); template approval/category/language is checked in the background and
+  a bad template blocks sending with a clear server log.
+- Reserved test numbers (below) are never messaged.
 
-Dashboard → **Authentication**:
-- *URL Configuration* → **Site URL** = your production URL; **Redirect URLs** add `https://your-game-url/**`,
-  `https://your-game-url/admin`, and for local work `http://localhost:5173/**`.
-- *Providers* → **Google** enabled (next section). **Anonymous sign-ins stay OFF** — guests must have no database presence.
-- Recommended hardening: *Providers → Email → disable*. (Not required for safety — see migration 2 — but it removes a
-  pointless sign-up route.)
+**Smoke test with your own phone** — open the app → *Sign In with OTP* → enter your WhatsApp number → the code should arrive
+within seconds. (Set `SEND_SMS_DRY_RUN=1` as an Edge secret to run the whole pipeline without sending.)
 
-## Google sign-in setup
+**Automated tests without sending WhatsApp:** `node scripts/test-otp.mjs on` gives a handful of reserved numbers a fixed OTP for
+one hour and tells the hook to skip them; `node scripts/test-otp.mjs off` removes both. (The Playwright run does this itself.)
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services → OAuth consent screen**: set the app
-   name, support email and authorised domains. Set the publishing status to **In production** before the campaign (in
-   *Testing* only listed test users can sign in).
-2. **Credentials → OAuth client ID → Web application**:
-   - **Authorised redirect URIs** → `https://<project-ref>.supabase.co/auth/v1/callback`
-     (this project: `https://fyjovgxvyuynlgjjucut.supabase.co/auth/v1/callback`).
-     **Without this exact entry Google answers `Error 400: redirect_uri_mismatch`.**
-   - Authorised JavaScript origins → your production URL (and `http://localhost:5173` for development).
-3. Supabase Dashboard → **Authentication → Providers → Google** → enable, paste the **Client ID** and **Client Secret**
-   (or `PATCH /v1/projects/<ref>/config/auth` with `external_google_*`). The secret lives only in Supabase.
-4. Scopes `openid email profile` are the defaults and are all the game needs.
+> The hook is called by Supabase even for test numbers, so a *skip list* (`SEND_SMS_SKIP_NUMBERS`) — not just the test-OTP
+> setting — is what prevents a message. Never leave test OTPs enabled in production.
+
+## Croma regions & reporting
+
+Registration asks for **Full name**, **Store / Region** (exactly *Croma East / South / North / West Region*) and **WhatsApp number**
+(+91, normalised to E.164). The region is enforced by a foreign key to `public.regions`.
+
+- **Snapshot:** the region is copied onto every game *session* and *game* when it is played, so history keeps its original
+  attribution even if a profile changes. Players cannot edit their own region or phone (no write access at all).
+- **Legacy:** historical Google players (kept as history) have `region = NULL` and show as "Legacy / unknown". No region is invented.
+- **Reporting** (admin only): per region — registered players, total games, valid games (not flagged), average score, highest
+  score — via `admin_region_report()`, the dashboard's **Region-wise performance** panel and its CSV export. Personal best and
+  per-player history are in the Players / Games tabs. The **global** leaderboard is unchanged (one board for everyone).
 
 ## Admin dashboard
 
-`/admin` — Google sign-in, then the `admin` Edge Function checks the account's verified email against
-`public.admin_users`. There is no shared password any more. Add the first admin (SQL editor):
+`/admin` is the **only** place Google sign-in exists. The one admin is **`marketingext@zopper.com`**: that Google account signs in
+and the `admin` Edge Function checks (on every call) that it is a Google-verified account listed in `public.admin_users`
+(migration 004 makes that list exactly this one email). Players — including WhatsApp-OTP players — are refused. No OTP login here.
 
-```sql
-insert into public.admin_users (email) values ('someone@your-company.com');   -- lower-case
-```
+**One-time Google setup (admin login only)** — no credentials live in this repo; the Google client ID/secret are stored only in
+Supabase → Authentication → Providers → Google:
+1. Google Cloud Console → Credentials → OAuth client (Web) → **Authorised redirect URI** `https://<project-ref>.supabase.co/auth/v1/callback`
+   (without it Google answers `redirect_uri_mismatch`), and your site as an authorised JavaScript origin.
+2. Supabase → Authentication → URL Configuration → Redirect URLs includes `https://<your-domain>/**`.
 
-Everything from the original dashboard is kept: KPIs, players/games per day, players by city, Leaderboard / All players /
-Games tabs, search, verified filter, flagged-only, per-player games, CSV export, disqualify / reinstate. Obsolete pieces
-(mobile number, email-OTP stats, DB-health/migrate tools) are gone because those features no longer exist. Guest games
-never reach the database, so they cannot appear in any admin view or export.
+To change the admin later: `update public.admin_users set email = 'new@zopper.com' where true;` (lower-case).
+
+KPIs, per-day charts, players by city, **Region-wise performance**, Leaderboard / All players / Games tabs with **region filter**
+(All · four regions · Legacy), search (name, phone, email, city), verified filter, flagged-only, per-player games, disqualify /
+reinstate, and CSV export (players, games, leaderboard — now with phone + region — and the region report).
 
 ## Deploying to Vercel
 
-1. Push this repo to GitHub, then Vercel → **Add New → Project** → import it. Framework preset **Vite** (auto-detected;
-   `vercel.json` sets build `npm run build`, output `dist`).
-2. **Environment Variables** (Production + Preview): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
-   (optionally `VITE_KNOW_MORE_URL`, `VITE_TERMS_URL`, `VITE_CAMPAIGN_DATES`).
-3. Deploy, then add the live URL to Supabase **Site URL / Redirect URLs** and Google **Authorised JavaScript origins**
-   (see above) and update the `GAME_URL` function secret.
+1. Import the repo (framework **Vite**; `vercel.json` sets build `npm run build`, output `dist`).
+2. Environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (optional `VITE_KNOW_MORE_URL`, `VITE_TERMS_URL`, `VITE_CAMPAIGN_DATES`).
+3. Add `https://<your-domain>/**` to Supabase **Redirect URLs** (needed only for the `/admin` Google login).
 4. Point the in-store **QR code** at the production URL.
-5. Smoke test on a phone: open the link → intro → *Sign in with Google* → Game Home → play → results → leaderboard;
-   then in a private tab *Play as Guest*.
+5. Phone smoke test: QR → intro → *Sign In with OTP* → register → WhatsApp code → verify → play → leaderboard; then a private tab as guest → play → *Sign In with OTP* on the result screen.
 
 ## How scores are protected
 
-The original anti-cheat model is preserved and now runs in a Supabase Edge Function:
+Unchanged: `start-game` issues a server-chosen seed → the phone records Santa's moves → `finish-game` replays the whole game with
+the shared engine and saves **its own** score (claimed score kept for audit only), flags faster-than-real-time games, saves each
+session once and returns the stored result on retries. New: only **verified, registered** players can start a game; a phone
+player without a profile gets 403 and is never auto-created.
 
-1. `start-game` (signed-in only) — the **server** picks the random seed and stores a one-time session.
-2. The phone plays the game and records Santa's target positions (`[tick, x, …]`).
-3. `finish-game` re-plays the entire game from the server's seed + those moves with the same engine, and saves **its own**
-   score. The phone's claimed score is stored for audit only (a mismatch is noted).
-4. A game that took less real time than its in-game time (faster than real time) is **flagged** and never counts.
-5. Each session saves once; a retried request returns the stored result (no duplicates); start is rate-limited (12/min).
-
-Database: RLS on every table; browser roles can only **read** their own profile/games (column-limited) — no insert,
-update or delete anywhere. `anon` (guests) can do nothing at all. The leaderboard RPC returns only
-*rank · "First L." · score* and only to signed-in Google players. Service-role keys exist only inside Supabase.
+Database: RLS everywhere; browser roles only **read** their own profile/games (column-limited, includes their phone and region);
+no insert/update/delete anywhere; `anon` can do nothing. The leaderboard RPC returns only *rank · "First L." · score*.
 
 ## Testing
 
 | Suite | Command | Needs |
 |---|---|---|
-| Engine parity (42): same scores / state / constants as the **original** engine via golden fixtures | `npm test` | nothing |
-| Live backend (54): RLS, tamper, retry, rate limit, leaderboard privacy, admin authz | `npm run verify:backend` | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
-| Browser (Playwright, real Chrome): guest, signed-in, admin, responsive | `npm run test:e2e` | Chrome; signed-in/admin specs also need `SUPABASE_SERVICE_ROLE_KEY` (else skipped) |
+| Unit (Vitest): engine parity with the original; phone rules; WATI request/response; **Standard Webhooks signature vector** | `npm test` | nothing |
+| Live backend (RLS, scores, phone registration, regions, admin, OTP cap) | `npm run verify:backend` | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
+| Browser (Playwright, real Chrome): guest, OTP sign-in, guest→sign-in, signed-in, legacy, admin, responsive | `npm run test:e2e` | + `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` (for test OTPs); without them the OTP specs are skipped |
 
-The service-role key is only ever read from your shell environment by the tests (to create temporary test users that are
-deleted afterwards). A real Google consent screen cannot be automated, so E2E injects a genuine Supabase session for a
-temporary user — everything after the OAuth redirect is exercised. See `docs/MIGRATION.md` for results and what could
-not be tested.
+The service-role key and access token are read only from your shell. Real WhatsApp delivery is **not** exercised by the automated
+tests (see `docs/WATI_OTP_REGIONS.md`).
 
 ## Environment variables
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `VITE_SUPABASE_URL` | front end (Vercel / `.env.local`) | project URL |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | front end | public publishable (anon) key |
-| `VITE_KNOW_MORE_URL`, `VITE_TERMS_URL`, `VITE_CAMPAIGN_DATES` | front end, optional | intro-screen copy |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | front end | project URL + public key |
+| `VITE_KNOW_MORE_URL`, `VITE_TERMS_URL`, `VITE_CAMPAIGN_DATES` | front end, optional | intro copy |
+| `WATI_API_TOKEN`, `WATI_API_BASE_URL`, `WATI_AUTH_TEMPLATE_NAME`, `WATI_AUTH_TEMPLATE_LANGUAGE` | Edge secrets (**never** the front end) | WhatsApp OTP delivery |
+| `SEND_SMS_HOOK_SECRET` | Edge secret (generated by `configure-phone-auth.mjs`) | verifies Supabase's hook signature |
+| `SEND_SMS_DRY_RUN`, `SEND_SMS_SKIP_NUMBERS` | Edge secrets, optional | staging / test-number safety |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Edge Functions (auto-injected) | server-side DB access |
-| `BREVO_API_KEY` or `SMTP_*`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `GAME_URL`, `KNOW_MORE_URL`, `TERMS_URL`, `CAMPAIGN_END` | Edge Function secrets, optional | thank-you email |
-| `SKIP_TIME_CHECK` | Edge Function secret | testing only |
+| `BREVO_API_KEY` / `SMTP_*`, `EMAIL_FROM`, … | Edge secrets, optional | thank-you email (only for historical players who have an email) |
 
 ## Troubleshooting
 
-- **`Error 400: redirect_uri_mismatch` at Google** → add `https://<ref>.supabase.co/auth/v1/callback` to the OAuth
-  client's *Authorised redirect URIs*.
-- **Back from Google but not signed in / "requested path is invalid"** → the page URL is missing from Supabase
-  *Redirect URLs*.
-- **"Access blocked: app has not completed verification"** → consent screen is still in *Testing*; publish it or add the user.
-- **Signed-in round says "Practice round"** → the Edge Functions are unreachable or not deployed.
-- **"Round not counted"** → the server judged the round faster than real time (or tampered).
-- **Admin says "No admin access"** → the account is not Google-verified or its lower-case email isn't in `admin_users`.
+- **"We couldn't send the WhatsApp code"** — check the Edge function logs for `send-sms`: `template` (not approved / wrong name or
+  language), `auth` (WATI token), `network`. The number must be on WhatsApp.
+- **Code arrives but the app errors** — the hook must answer with `Content-Type: application/json` and within 5 s.
+- **"Please wait N seconds"** — Supabase allows one code per number per 60 s.
+- **Admin says "No admin access"** — sign in with the authorised Google account (`marketingext@zopper.com`); WhatsApp-OTP players are never admins.
+- **A returning player sees an old name/region** — by design: an existing profile is never overwritten at sign-in.

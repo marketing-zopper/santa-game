@@ -15,7 +15,7 @@ export default function Hud({ score, lives, best, popKey, muted, onMute, onPause
           {[0, 1, 2].map((i) => <img key={i} src="/assets/shield.webp" alt="" className={i < lives ? '' : 'lost'} />)}
         </div>
         <div className="hud-btns">
-          <button className="icon-btn glass" id="muteBtn" aria-label="Sound on/off" onClick={onMute}><MuteIcon muted={muted} /></button>
+          <button className="icon-btn glass" id="muteBtn" aria-label="Music and sound on/off" onClick={onMute}><MuteIcon muted={muted} /></button>
           <button className="icon-btn glass" id="pauseBtn" aria-label="Pause" onClick={onPause}><PauseIcon /></button>
         </div>
       </div>
