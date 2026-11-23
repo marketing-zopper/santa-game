@@ -1,3 +1,5 @@
+> **Update (Nov 2026):** player sign-in is now WhatsApp OTP (WATI) with Croma regions — see [WATI_OTP_REGIONS.md](WATI_OTP_REGIONS.md). Sections below that describe Google sign-in for players are historical.
+
 # Migration report — Santa's Safe Catch → React + Vite + Supabase
 
 | | |

@@ -4,6 +4,8 @@
 // only answers accounts whose verified email is listed in public.admin_users. Everything is re-checked on the server.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase, SUPABASE_URL, SUPABASE_KEY } from '../lib/supabase.js';
+import { REGIONS } from '../lib/regions.js';
+import { formatIndianMobile } from '../lib/phone.js';
 
 const nf = new Intl.NumberFormat('en-IN');
 const dt = (v) => (v ? new Date(v).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
@@ -114,25 +116,28 @@ const Loc = ({ r }) => {
   const src = r.location_source === 'gps' ? <span className="pill gps">GPS</span> : <span className="pill net">Network</span>;
   return <>{city} {city || r.lat != null ? src : null}{r.lat != null ? <> <a href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noopener">Map</a></> : null}</>;
 };
-const EmailCell = ({ r }) => <>{r.email} {r.email_verified ? <span className="pill gps" title="Google email verified">Verified</span> : <span className="pill net">Not verified</span>}</>;
+const EmailCell = ({ r }) => <>{r.email || '–'} {r.verified ? <span className="pill gps" title="Verified (WhatsApp OTP or Google)">Verified</span> : <span className="pill net">Not verified</span>}</>;
+const PhoneCell = ({ r }) => (r.phone ? formatIndianMobile(r.phone) : '–');
+// Historical Google players have no Croma region: shown as "Legacy", never given a made-up one
+const RegionCell = ({ r }) => (r.region ? r.region : <span className="pill net" title="Signed in with Google before regions existed">Legacy</span>);
 
 const COLS = {
   leaderboard: [
     ['#', (r) => <span className="rank">{r.rank}</span>, 'num'],
     ['Prize rank', (r) => (r.official_rank ? <span className="prize-rank">#{r.official_rank}</span> : <span className="pill net">–</span>), 'num'],
-    ['Name', (r) => r.display_name], ['Email', (r) => <EmailCell r={r} />],
+    ['Name', (r) => r.display_name], ['Phone', (r) => <PhoneCell r={r} />], ['Region', (r) => <RegionCell r={r} />], ['Email', (r) => <EmailCell r={r} />],
     ['Best', (r) => nf.format(r.best_score), 'num'], ['Reached', (r) => dt(r.best_at)], ['Games', (r) => r.games_played, 'num'],
     ['Location', (r) => <Loc r={r} />], ['', null, 'act'],
   ],
   players: [
-    ['Joined', (r) => dt(r.created_at)], ['Name', (r) => r.display_name], ['Email', (r) => <EmailCell r={r} />],
+    ['Joined', (r) => dt(r.created_at)], ['Name', (r) => r.display_name], ['Phone', (r) => <PhoneCell r={r} />], ['Region', (r) => <RegionCell r={r} />], ['Email', (r) => <EmailCell r={r} />],
     ['Thank-you email', (r) => (r.thanks_sent_at ? 'Sent ' + dt(r.thanks_sent_at) : '–')],
     ['Best', (r) => nf.format(r.best_score), 'num'], ['Rank', (r) => r.rank || '–', 'num'], ['Games', (r) => r.games_played, 'num'],
     ['Last played', (r) => dt(r.last_seen_at)], ['Location', (r) => <Loc r={r} />], ['', null, 'act'],
   ],
   games: [
-    ['When', (r) => dt(r.created_at)], ['Player', (r) => <>{r.display_name}{r.email_verified ? '' : <> <span className="pill net">Not verified</span></>}</>],
-    ['Email', (r) => r.email], ['Score', (r) => nf.format(r.score), 'num'],
+    ['When', (r) => dt(r.created_at)], ['Player', (r) => <>{r.display_name}{r.verified ? '' : <> <span className="pill net">Not verified</span></>}</>],
+    ['Phone', (r) => <PhoneCell r={r} />], ['Region', (r) => <RegionCell r={r} />], ['Score', (r) => nf.format(r.score), 'num'],
     ['Length', (r) => (r.duration_s != null ? Math.round(r.duration_s) + 's' : ''), 'num'], ['Phones caught', (r) => r.phones_caught, 'num'],
     ['Check', (r) => (r.flagged ? <span className="pill flag" title={r.flag_reason}>Flagged</span> : r.flag_reason ? <span className="pill net" title={r.flag_reason}>Note</span> : 'OK')],
     ['Location', (r) => <>{r.city || r.ip_city || ''}{r.lat != null ? <> <a href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noopener">Map</a></> : null}</>],
@@ -148,6 +153,7 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [flagOnly, setFlagOnly] = useState(false);
+  const [region, setRegion] = useState('all');          // 'all' | 'legacy' | one of the four Croma regions
   const [player, setPlayer] = useState(null);            // { id, name } — Games tab filtered to one player
   const [offset, setOffset] = useState(0);
   const [data, setData] = useState({ rows: [], total: 0, kind: null });   // `kind` = which tab these rows belong to
@@ -163,12 +169,12 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
   useEffect(() => { const t = setTimeout(() => { setQ(search.trim()); setOffset(0); }, 300); return () => clearTimeout(t); }, [search]);
 
   const qs = useCallback((extra) => {
-    const p = new URLSearchParams({ action: tab, limit: LIMIT, offset, q, verified });
+    const p = new URLSearchParams({ action: tab, limit: LIMIT, offset, q, verified, region });
     if (tab === 'games' && flagOnly) p.set('flagged', '1');
     if (tab === 'games' && player) p.set('player', player.id);
     for (const k in extra || {}) p.set(k, extra[k]);
     return p.toString();
-  }, [tab, offset, q, verified, flagOnly, player]);
+  }, [tab, offset, q, verified, region, flagOnly, player]);
 
   const seq = useRef(0);   // only the most recent table request may update the screen (responses can arrive out of order)
   const loadTable = useCallback(() => {
@@ -192,6 +198,15 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
       const blob = await (await adminFetch(qs({ action: 'export', type: tab }))).blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob); a.download = `santa-safe-catch-${tab}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    } catch (e) { handle(e); }
+  };
+
+  const exportRegions = async () => {
+    try {
+      const blob = await (await adminFetch('action=export&type=regions')).blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = `santa-safe-catch-regions-${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     } catch (e) { handle(e); }
   };
@@ -244,7 +259,24 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
           </div>
         </section>
 
-        <section className="panel">
+        <section className="panel" id="regionReport">
+          <div className="hbar" style={{ padding: 0, marginBottom: 8 }}>
+            <div style={{ marginRight: 'auto' }}><h2 style={{ margin: 0 }}>Region-wise performance</h2><p className="hint" style={{ margin: 0 }}>Games are counted in the region the player was registered in <b>when they played</b>. Valid = not flagged.</p></div>
+            <button className="btn ghost" id="exportRegions" onClick={exportRegions}>Export region report</button>
+          </div>
+          <div className="tablewrap">
+            <table>
+              <thead><tr><th>Region</th><th className="num">Registered players</th><th className="num">Total games</th><th className="num">Valid games</th><th className="num">Average score</th><th className="num">Highest score</th></tr></thead>
+              <tbody>
+                {s ? s.by_region.map((r) => (
+                  <tr key={r.region}><td>{r.region}</td><td className="num">{nf.format(r.players)}</td><td className="num">{nf.format(r.games)}</td><td className="num">{nf.format(r.valid_games)}</td><td className="num">{nf.format(r.avg_score)}</td><td className="num">{nf.format(r.top_score)}</td></tr>
+                )) : <tr><td className="empty" colSpan={6}>Loading…</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel" id="dataPanel">
           <div className="tabs" role="tablist">
             {[['leaderboard', 'Leaderboard'], ['players', 'All players'], ['games', 'Games']].map(([k, label]) => (
               <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => selectTab(k)}>{label}</button>
@@ -256,7 +288,12 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
                 <button type="button" key={v} aria-pressed={verified === v} onClick={() => { setVerified(v); setOffset(0); }}>{label} <span>{s ? nf.format(n || 0) : ''}</span></button>
               ))}
             </div>
-            <input type="search" placeholder="Search name, email or city" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <label>Region <select id="regionFilter" aria-label="Region" value={region} onChange={(e) => { setRegion(e.target.value); setOffset(0); }}>
+              <option value="all">All regions</option>
+              {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              <option value="legacy">Legacy / unknown</option>
+            </select></label>
+            <input type="search" placeholder="Search name, phone, email or city" aria-label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
             {tab === 'games' ? <label><input type="checkbox" checked={flagOnly} onChange={(e) => { setFlagOnly(e.target.checked); setOffset(0); }} /> Flagged only</label> : null}
             {tab === 'games' && player ? <span>Showing games for <b>{player.name}</b> <button className="linkbtn" onClick={() => { setPlayer(null); setOffset(0); }}>Show all</button></span> : null}
             <button className="btn" onClick={exportCsv}>Export CSV</button>

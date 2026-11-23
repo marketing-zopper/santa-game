@@ -99,3 +99,7 @@ a{color:var(--brand);font-weight:700}
 .g-dot{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff}
 .g-dot svg{width:14px;height:14px}
 .btn[disabled]{opacity:.6;cursor:default}
+
+/* region filter + region report (added with the Croma regions) */
+.toolbar select{border:2px solid var(--line);background:var(--bg);border-radius:12px;padding:8px 10px;color:var(--ink)}
+#regionReport .hint{margin:0}

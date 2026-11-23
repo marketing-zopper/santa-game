@@ -6,7 +6,7 @@
 import { HelpIcon, LeaderboardIcon, MuteIcon, PlayIcon, TrophyIcon } from '../components/icons.jsx';
 
 export default function HomeScreen({ mode, name, best, muted, busy, onPlay, onHow, onLeaderboard, onMute, onChip }) {
-  const signedIn = mode === 'google';
+  const signedIn = mode === 'player';
   return (
     <div className="menu" id="startScreen">
       <div className="menu-bar">

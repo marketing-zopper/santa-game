@@ -1,0 +1,49 @@
+/* Registration + WhatsApp-OTP form styles.
+ * These are the ORIGINAL sign-up / OTP rules from the source index.html (commit ce31832), restored verbatim — the field
+ * rows, +91 chip, 6-box code input, shake animation and resend row. Only addition: the select / dropdown rules at the end. */
+.reg-form{display:flex;flex-direction:column;gap:12px}
+.reg-form[hidden]{display:none}
+.rfield{display:flex;flex-direction:column;gap:6px}
+.rlbl{font-size:13px;font-weight:600;color:var(--muted)}
+.rwrap{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:0 14px;transition:border-color .15s,box-shadow .15s}
+.rwrap>svg{width:20px;height:20px;flex:none;color:#A6ACBE;transition:color .15s}
+.rwrap input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:500 17px var(--font);letter-spacing:-.01em;color:var(--navy);padding:14px 0 13px;-webkit-user-select:text;user-select:text}
+.rwrap input::placeholder{color:#B5B9C8;font-weight:400}
+.rwrap:focus-within{border-color:var(--cyan);box-shadow:0 0 0 4px rgba(30,177,231,.16)}
+.rwrap:focus-within>svg{color:var(--cyan)}
+.rwrap:has(input[aria-invalid="true"]){border-color:var(--red);box-shadow:0 0 0 4px rgba(214,45,59,.12)}
+.cc{display:flex;align-items:center;gap:6px;font-weight:600;font-size:16px;color:var(--navy);padding-right:10px;border-right:1.5px solid var(--line)}
+.cc svg{width:22px;height:15px;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
+.rcheck{display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-top:2px}
+.rcheck input{position:absolute;opacity:0;width:1px;height:1px}
+.rcheck .box{flex:none;width:22px;height:22px;border:1.5px solid #C9C4BE;border-radius:7px;background:#fff;display:grid;place-items:center;margin-top:1px;transition:background .15s,border-color .15s}
+.rcheck .box svg{width:14px;height:14px;opacity:0;transform:scale(.4);transition:opacity .15s,transform .2s cubic-bezier(.2,.9,.3,1.6)}
+.rcheck input:checked+.box{background:var(--orange);border-color:var(--orange)}
+.rcheck input:checked+.box svg{opacity:1;transform:none}
+.rcheck input:focus-visible+.box{outline:3px solid var(--cyan);outline-offset:2px}
+.rcheck .txt{font-size:13px;font-weight:500;line-height:1.4;color:var(--muted)}
+.reg-form .btn{height:58px;font-size:24px;margin-top:2px}
+.reg-switch{margin:0;text-align:center;font-size:14px;font-weight:500;color:var(--muted)}
+.reg-lead{margin:2px 0 0;font-size:15px;font-weight:500;line-height:1.45;color:var(--muted)}
+.reg-lead b{color:var(--navy);font-weight:700;word-break:break-all}
+.linkish.practice{align-self:center;font-size:13px}
+.linkish.practice[hidden]{display:none}
+.otp-box{position:relative;height:62px}
+.otp-box input{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;z-index:2;cursor:text}
+.otp-cells{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;height:100%}
+.otp-cells span{display:grid;place-items:center;background:#fff;border:1.5px solid var(--line);border-radius:14px;font-size:28px;font-weight:700;color:var(--navy);transition:border-color .15s,box-shadow .15s}
+.otp-box.focus .otp-cells span.cur{border-color:var(--cyan);box-shadow:0 0 0 4px rgba(30,177,231,.16)}
+.otp-box.focus .otp-cells span.cur:empty::after{content:"";width:2px;height:26px;background:var(--cyan);animation:blink 1s steps(2) infinite}
+.otp-box.bad .otp-cells span{border-color:var(--red);animation:shakex .35s}
+@keyframes blink{50%{opacity:0}}
+@keyframes shakex{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.otp-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+/* Store / Region dropdown, styled like the other fields (this is the only new control) */
+.rwrap select{flex:1;min-width:0;border:0;outline:0;background:transparent;font:500 17px var(--font);letter-spacing:-.01em;color:var(--navy);padding:14px 22px 13px 0;appearance:none;-webkit-appearance:none;cursor:pointer;text-overflow:ellipsis}
+.rwrap select:invalid{color:#B5B9C8;font-weight:400}
+.rwrap select option{color:var(--navy);font-weight:500}
+.rwrap .chev{width:16px;height:16px;margin-left:-26px;flex:none;pointer-events:none;color:#A6ACBE}
+.rwrap:has(select[aria-invalid="true"]){border-color:var(--red);box-shadow:0 0 0 4px rgba(214,45,59,.12)}
+.reg-form .fine{margin:0;font-size:12.5px;font-weight:500;line-height:1.4;color:var(--muted)}
+.reg-form .fine a{color:#1B8FC0;font-weight:700}
