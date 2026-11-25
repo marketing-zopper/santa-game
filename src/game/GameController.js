@@ -151,6 +151,12 @@ export class GameController {
     this.sc = Math.min(this.cw / W, this.ch / H); this.ox = (this.cw - W * this.sc) / 2; this.oy = (this.ch - H * this.sc);  // playfield sits on the bottom edge
     this.buildBackdrop();
     document.documentElement.style.setProperty('--scene-top', Math.round(this.oy + 528 * this.sc) + 'px');
+    // UI scale for tablets / laptops / big screens (phones stay at 1) and the width of the playfield column the HUD + menu sit in
+    const ui = Math.min(this.cw, this.ch) < 600 ? 1 : Math.min(1.6, Math.max(1, Math.min(this.cw / 390, this.ch / 700)));
+    document.documentElement.style.setProperty('--ui-zoom', ui.toFixed(3));
+    const sceneTop = this.oy + 528 * this.sc;
+    document.documentElement.style.setProperty('--menu-zoom', (ui === 1 ? 1 : Math.max(0.85, Math.min(ui, sceneTop / 650))).toFixed(3));   // Game Home must fit above Santa
+    document.documentElement.style.setProperty('--stage-w', Math.min(this.cw, Math.max(W * this.sc, 400 * ui)).toFixed(1) + 'px');
   }
 
   buildBackdrop() {

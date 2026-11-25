@@ -4,8 +4,10 @@ import { enterAsGuest, clickPlay, homeReady } from './helpers.js';
 
 const PHONES = [
   ['iPhone SE (320x568)', 320, 568], ['Android small (360x640)', 360, 640], ['iPhone 13 (390x844)', 390, 844],
-  ['Pixel 7 (412x915)', 412, 915], ['iPhone Pro Max (430x932)', 430, 932], ['Tablet portrait (768x1024)', 768, 1024],
-  ['Desktop (1280x800)', 1280, 800],
+  ['Pixel 7 (412x915)', 412, 915], ['iPhone Pro Max (430x932)', 430, 932],
+  ['Tablet portrait (768x1024)', 768, 1024], ['iPad Air (820x1180)', 820, 1180], ['iPad Pro (1024x1366)', 1024, 1366], ['Tablet landscape (1024x768)', 1024, 768],
+  ['Laptop (1366x768)', 1366, 768], ['Laptop short (1366x600)', 1366, 600], ['Laptop (1536x864)', 1536, 864], ['Desktop (1280x800)', 1280, 800],
+  ['Full HD (1920x1080)', 1920, 1080], ['QHD (2560x1440)', 2560, 1440], ['Ultrawide (2560x1080)', 2560, 1080],
 ];
 
 const noHorizontalScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1 && document.body.scrollWidth <= window.innerWidth + 1);
@@ -23,6 +25,13 @@ for (const [name, width, height] of PHONES) {
     await page.waitForSelector('#loader', { state: 'detached' });
     expect(await noHorizontalScroll(page)).toBe(true);
     expect(await inViewport(page, '#introContinue')).toBe(true);
+    if (width > 1000) {                                                          // the action bar must not stretch edge to edge
+      const ui = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1);
+      const half = 230 * ui + 4;                                              // the column is 460px wide at 1x, scaled with the UI
+      const c = await page.locator('#introContinue').boundingBox(), k = await page.locator('#knowMore').boundingBox();
+      expect(c.x + c.width, 'Continue stays in the centred column').toBeLessThanOrEqual(width / 2 + half);
+      expect(k.x, 'Know more stays in the centred column').toBeGreaterThanOrEqual(width / 2 - half);
+    }
     await page.screenshot({ path: `test-results/shots/${width}x${height}-1-intro.png` });
 
     await page.click('#introContinue');
@@ -44,12 +53,27 @@ for (const [name, width, height] of PHONES) {
     await page.waitForTimeout(300);
     expect(await noHorizontalScroll(page)).toBe(true);
     for (const sel of ['#playBtn', '#howBtn', '#playerChip', '#menuMute']) expect(await inViewport(page, sel), `${sel} inside the viewport`).toBe(true);
+    {
+      const tag = page.locator('.menu .logo .tag');
+      if (await tag.isVisible()) {
+        const chip = await page.locator('.best-chip').boundingBox(), t = await tag.boundingBox();
+        const apart = chip.y + chip.height <= t.y + 1 || chip.x + chip.width <= t.x + 1 || t.x + t.width <= chip.x + 1;
+        expect(apart, 'Best chip does not overlap the title tag').toBe(true);
+      }
+      const play = await page.locator('#playBtn').boundingBox(), logo = await page.locator('.menu .logo img').boundingBox();
+      expect(logo.y + logo.height, 'logo sits above the PLAY button').toBeLessThanOrEqual(play.y + 2);
+    }
     await page.screenshot({ path: `test-results/shots/${width}x${height}-3-home.png` });
 
     await clickPlay(page);
     await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
     expect(await noHorizontalScroll(page)).toBe(true);
     for (const sel of ['#score', '#lives', '#pauseBtn', '#muteBtn']) expect(await inViewport(page, sel), `${sel} inside the viewport`).toBe(true);
+    {
+      const h = await page.locator('#hud').boundingBox();                          // the HUD is centred over the playfield, not in the far corners
+      expect(Math.abs(h.x - (width - (h.x + h.width))), 'HUD is centred').toBeLessThanOrEqual(3);
+      if (width > 1000 && width > height * 1.2) expect(h.width, 'HUD hugs the playfield on wide (landscape) screens').toBeLessThan(width * 0.6);
+    }
     // canvas backing store has exactly the CSS box's aspect ratio, and the playfield is scaled uniformly → sprites are never stretched
     const m = await page.evaluate(() => {
       const c = document.getElementById('game'), r = c.getBoundingClientRect(), g = window.__ssc.game;
