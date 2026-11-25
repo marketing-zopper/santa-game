@@ -4,6 +4,7 @@
 import { useEffect, useRef } from 'react';
 import { CAMPAIGN } from '../lib/campaign.js';
 import { ChevronIcon, FunIcon, LeaderboardIcon, PlayIcon } from '../components/icons.jsx';
+import { DeviceGarland, Holly, SnowCap, Snowfall, Twinkle } from '../components/Festive.jsx';
 
 const StoreIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5 5.6 4h12.8L20 9.5a2.6 2.6 0 0 1-4.8 1.3 2.6 2.6 0 0 1-4.4 0 2.6 2.6 0 0 1-4.4 0A2.6 2.6 0 0 1 4 9.5z" fill="#FFD25A" /><path d="M5.5 12.6V20h13v-7.4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round" /><rect x="10" y="15" width="4" height="5" rx=".6" fill="#fff" /></svg>
@@ -28,49 +29,56 @@ function PrizeToggle() {
   );
 }
 
-// Option A: top 100 win a free Device Doctor plan
+// shared Christmas dressing: snow on the top edge, holly in the corners, snow drifting down
+const Dressing = () => (<><SnowCap /><Holly side="l" /><Holly side="r" /><Snowfall /></>);
+
+// Option A: top 100 win a free Device Doctor plan. The hero is the five devices it covers, hung as baubles.
 function DoctorCard() {
   const p = CAMPAIGN.prize;
   return (
-    <section className="ph-card" id="introPrizes" aria-label="Prize">
-      <i className="ph-rays" aria-hidden="true" />
+    <section className="ph-card xmas" id="introPrizes" aria-label="Prize">
+      <Dressing />
       <span className="only-badge">{CAMPAIGN.onlyFor}</span>
-      <div className="ph-art" aria-hidden="true">
-        <img className="ph-phone p1" src="/assets/phone-orange.webp" alt="" />
-        <img className="ph-phone p2" src="/assets/phone-gold.webp" alt="" />
-        <img className="ph-phone p3" src="/assets/phone-blue.webp" alt="" />
-        <span className="ph-shield"><img src="/assets/shield.webp" alt="" /><i className="ph-plus">+</i></span>
-        <span className="ph-sticker">Free<small>1 year</small></span>
-      </div>
+      <DeviceGarland />
       <p className="ph-kicker">{p.kicker}</p>
       <h2 className="ph-title">{p.title}</h2>
-      <p className="ph-sub">{p.sub}</p>
+      <div className="five-strip">
+        <span className="five-n"><small>up to</small>{p.five.n}</span>
+        <span className="five-t"><b>{p.five.title}</b>{p.five.text}</span>
+      </div>
       <ul className="ph-perks">{p.perks.map((perk) => <li key={perk}>{perk}</li>)}</ul>
     </section>
   );
 }
 
-// Option B: top 3 win an iPad / Samsung Galaxy Tab / JBL speaker, shown as a podium (2nd · 1st · 3rd)
+// Option B: top 3 win an iPad / Samsung Galaxy Tab / JBL speaker. The hero is 1st prize bursting out of an open gift
+// box (starburst, flying lid, confetti); 2nd and 3rd sit on gift tags below it.
 function GadgetsCard() {
   const p = CAMPAIGN.prize;
-  const order = [p.places[1], p.places[0], p.places[2]];
+  const [first, ...rest] = p.places;
   return (
-    <section className="ph-card gadgets" id="introPrizes" aria-label="Prizes">
-      <i className="ph-rays" aria-hidden="true" />
+    <section className="ph-card xmas gadgets" id="introPrizes" aria-label="Prizes">
+      <Dressing />
       <span className="only-badge">{CAMPAIGN.onlyFor}</span>
       <p className="ph-kicker gk">{p.kicker}</p>
       <h2 className="ph-title">{p.title}</h2>
-      <p className="ph-sub">{p.sub}</p>
-      <ol className="podium">
-        {order.map((pl) => (
-          <li key={pl.place} className={'pod p' + pl.place[0]}>
-            <span className="pod-art"><img src={pl.img} alt={pl.name} /></span>
-            <span className="pod-name">{pl.name}</span>
-            <span className="pod-worth">worth {pl.worth}</span>
-            <span className="pod-block"><b>{pl.place}</b></span>
+      <div className="g-hero">
+        <i className="g-burst" aria-hidden="true" />
+        <span className="g-confetti" aria-hidden="true">{Array.from({ length: 14 }, (_, i) => <i key={i} />)}</span>
+        <Twinkle className="t1" /><Twinkle className="t2" /><Twinkle className="t3" />
+        <img className="g-prize" src={first.img} alt={first.name} />
+        <i className="g-lid" aria-hidden="true" />
+        <span className="g-box"><b>{first.place} prize</b></span>
+      </div>
+      <p className="g-name"><b>{first.name}</b><span>worth {first.worth}</span></p>
+      <ul className="g-row">
+        {rest.map((pl) => (
+          <li key={pl.place} className={'g-tile p' + pl.place[0]}>
+            <span className="g-tile-img"><img src={pl.img} alt={pl.name} /></span>
+            <span className="g-tile-t"><small>{pl.place} prize</small><b>{pl.name}</b><em>worth {pl.worth}</em></span>
           </li>
         ))}
-      </ol>
+      </ul>
     </section>
   );
 }

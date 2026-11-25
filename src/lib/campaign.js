@@ -17,12 +17,13 @@ const PRIZE_OPTIONS = {
     winners: 100,
     style: 'doctor',
     heroLine: 'The top 100 Zopper customers win a free Device Doctor plan',
-    winStep: 'Zopper customers in the top 100 get a free Device Doctor plan',
+    winStep: 'Zopper customers in the top 100 get a free Device Doctor plan for up to 5 devices',
     headline: 'Top 100 win a free Device Doctor plan',
     goal: 'a free Device Doctor plan',
-    kicker: 'The top 100 win a',
+    kicker: 'Santa’s gift for the top 100',
     title: 'Free Device Doctor plan',
-    sub: 'A full year of care for up to 5 out-of-warranty devices and appliances at home',
+    // the headline benefit, shown big on the prize card
+    five: { n: '5', title: 'Out-of-warranty devices covered', text: 'Phones, laptops, TVs and home appliances, for a full year' },
     // benefits as listed on zopper.com/sonovision-plans/device-doctor-plan
     perks: [
       'Unlimited free technician visits',
@@ -38,9 +39,9 @@ const PRIZE_OPTIONS = {
     winStep: 'Finish in the top 3 to win prizes worth up to ₹50,000',
     headline: 'Top 3 win prizes worth up to ₹50,000',
     goal: 'a prize worth up to ₹50,000',
-    kicker: 'Prizes worth ₹90,000',
-    title: 'Win big this Christmas',
-    sub: 'The top 3 Zopper customers on the leaderboard take home these prizes',
+    kicker: 'Santa’s gifts for the top 3',
+    title: 'Prizes worth ₹90,000',
+    sub: 'Finish in the top 3 on the leaderboard and unwrap one of these',
     // product photos: Wikimedia Commons, screens recoloured + backgrounds removed (licences require this credit)
     credit: 'Product photos via Wikimedia Commons: iPad by Zach Vega (CC BY-SA 3.0), Galaxy Tab by AnVuong1222004 (CC BY-SA 4.0), JBL speaker by Trougnouf (CC BY 4.0); edited',
     places: [
