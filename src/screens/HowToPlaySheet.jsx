@@ -8,8 +8,8 @@ export default function HowToPlaySheet({ onClose }) {
       <div className="panel sheet-panel" role="dialog" aria-labelledby="howTitle">
         <button className="close-x sheet-x" data-close aria-label="Close"><CloseIcon /></button>
         <div className="how-head">
-          <span className="tag light">Santa's Safe Catch</span>
-          <h2 className="ttl" id="howTitle">How to <em>Play</em></h2>
+          <span className="tag light">Ho Ho Ho Merry Catch-mas</span>
+          <h2 className="ttl" id="howTitle">How to <em>play</em></h2>
           <p className="sub">Catch the phones, keep them safe, and survive as long as you can!</p>
         </div>
         <ol className="how-steps">
@@ -25,7 +25,7 @@ export default function HowToPlaySheet({ onClose }) {
           <div className="sh"><img src="/assets/shield.webp" alt="" /><span><b>Zopper Shield</b><small>Extra life</small></span></div>
         </div>
         <p className="note">You have 3 lives. Dropping a phone or catching coal costs one.</p>
-        <button className="btn" data-close data-play><PlayIcon />Let's Go</button>
+        <button className="btn" data-close data-play><PlayIcon />Let&rsquo;s go</button>
       </div>
     </Sheet>
   );

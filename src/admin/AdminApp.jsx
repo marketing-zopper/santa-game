@@ -47,7 +47,7 @@ function LoginCard({ error }) {
   return (
     <section id="login">
       <div className="login-card">
-        <h1>Santa's Safe Catch<br />Admin</h1>
+        <h1>Ho Ho Ho Merry Catch-mas<br />Admin</h1>
         <p>Admin sign-in with the authorised Google account. (Players sign in from the game with a WhatsApp OTP.)</p>
         {err ? <p className="err">{err}</p> : null}
         <button className="btn" onClick={go} disabled={busy}><GoogleDot />{busy ? 'Opening Google…' : 'Sign in with Google'}</button>
@@ -229,7 +229,7 @@ function Dashboard({ email, onSignOut, onAuthLost }) {
   return (
     <div id="appView">
       <header><div className="wrap hbar">
-        <h1>Santa's Safe Catch<small>Admin</small></h1>
+        <h1>Ho Ho Ho Merry Catch-mas<small>Admin</small></h1>
         <span className="updated">{updated}</span>
         <button className="btn ghost" onClick={refresh}>Refresh</button>
         <button className="btn ghost" onClick={onSignOut} title={email}>Sign out</button>

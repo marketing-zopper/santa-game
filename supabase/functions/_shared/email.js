@@ -76,7 +76,7 @@ function layout({ preheader, body, footerExtra }) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#FFFFFF;border-radius:20px;overflow:hidden;font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#1D1E3F;">
 <tr><td style="background:#1D1E3F;background-image:linear-gradient(160deg,#263E91,#1D1E3F);padding:26px 28px 22px;">
   <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#00B5EA;font-weight:700;">Zopper Christmas Challenge</div>
-  <div style="font-size:30px;line-height:1.05;font-weight:800;color:#FBEB3C;margin-top:8px;">Santa's Safe Catch</div>
+  <div style="font-size:30px;line-height:1.05;font-weight:800;color:#FBEB3C;margin-top:8px;">Ho Ho Ho Merry Catch-mas</div>
 </td></tr>
 <tr><td style="padding:28px 28px 8px;font-size:16px;line-height:1.55;">${body}</td></tr>
 <tr><td style="padding:8px 28px 26px;font-size:12px;line-height:1.5;color:#6B6E96;">
@@ -90,13 +90,13 @@ function layout({ preheader, body, footerExtra }) {
 
 export function thanksEmail({ name, score, best, rank, total }) {
   const c = emailConfig();
-  const subject = `Thanks for playing Santa's Safe Catch, ${firstName(name)}!`;
+  const subject = `Thanks for playing Ho Ho Ho Merry Catch-mas, ${firstName(name)}!`;
   const rankLine = rank ? `You're currently <b>#${rank}</b> of ${total} players on the leaderboard.` : `Catch a few phones to get onto the leaderboard.`;
   const btn = (href, label, bg, fg) => `<a href="${esc(href)}" style="display:inline-block;background:${bg};color:${fg};text-decoration:none;font-weight:800;font-size:16px;padding:14px 26px;border-radius:14px;border:3px solid #1D1E3F;">${label}</a>`;
   const html = layout({
     preheader: `Your score: ${score}. Play again as many times as you like to climb the leaderboard.`,
     body: `<p style="margin:0 0 14px;">Hi ${esc(firstName(name))},</p>
-<p style="margin:0 0 18px;">Thanks for playing <b>Santa's Safe Catch</b>! Here's how your first round went:</p>
+<p style="margin:0 0 18px;">Thanks for playing <b>Ho Ho Ho Merry Catch-mas</b>! Here's how your first round went:</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;background:#FFE7C0;border:3px solid #1D1E3F;border-radius:16px;"><tr>
   <td style="padding:16px 18px;text-align:center;"><div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#4A4C78;font-weight:700;">Your score</div><div style="font-size:40px;font-weight:800;line-height:1.1;">${Number(score) || 0}</div></td>
   <td style="padding:16px 18px;text-align:center;border-left:2px dashed #E0B97F;"><div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#4A4C78;font-weight:700;">Rank</div><div style="font-size:40px;font-weight:800;line-height:1.1;color:#263E91;">${rank ? '#' + rank : '–'}</div></td>
@@ -115,6 +115,6 @@ export function thanksEmail({ name, score, best, rank, total }) {
   ${c.knowMore ? `<div style="margin-top:12px;"><a href="${esc(c.knowMore)}" style="color:#FBEB3C;font-weight:800;">Know more about Zopper protection →</a></div>` : ''}
 </td></tr></table>`,
   });
-  const text = `Hi ${firstName(name)},\n\nThanks for playing Santa's Safe Catch! Your score: ${score}. ${rank ? `You're #${rank} of ${total} on the leaderboard.` : ''}\n\nPlay as many times as you like; only your best score counts.${c.end ? ` The challenge closes on ${c.end}.` : ''} Top players win prizes and are contacted on the email address of the Google account they signed in with.\n\nPlay again: ${c.gameUrl}\n${c.knowMore ? `Zopper phone protection: ${c.knowMore}\n` : ''}\nZopper will never ask you for an OTP, password or payment to hand over a prize.${c.terms ? `\nTerms: ${c.terms}` : ''}`;
+  const text = `Hi ${firstName(name)},\n\nThanks for playing Ho Ho Ho Merry Catch-mas! Your score: ${score}. ${rank ? `You're #${rank} of ${total} on the leaderboard.` : ''}\n\nPlay as many times as you like; only your best score counts.${c.end ? ` The challenge closes on ${c.end}.` : ''} Top players win prizes and are contacted on the email address of the Google account they signed in with.\n\nPlay again: ${c.gameUrl}\n${c.knowMore ? `Zopper phone protection: ${c.knowMore}\n` : ''}\nZopper will never ask you for an OTP, password or payment to hand over a prize.${c.terms ? `\nTerms: ${c.terms}` : ''}`;
   return { subject, html, text };
 }

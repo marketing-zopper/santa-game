@@ -9,24 +9,41 @@ export const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 export const STORAGE_KEY = SUPABASE_URL ? `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token` : 'sb-unconfigured-auth-token';
 const opts = { auth: { persistSession: false, autoRefreshToken: false } };
 
-/** Game Home is showing AND the loading screen has finished fading out (it would otherwise swallow clicks). */
-export async function homeReady(page, timeout = 25_000) {
-  await page.waitForSelector('#startScreen', { timeout });
+/** The Introduction is showing AND the loading screen has finished fading out (it would otherwise swallow clicks).
+ *  With `play: true`, also waits for the "Main menu" variant: a player is chosen, so the bottom button is Play (#introPlay). */
+export async function introReady(page, { play = false, timeout = 25_000 } = {}) {
+  await page.waitForSelector('#introScreen', { timeout });
   await page.waitForSelector('#loader', { state: 'detached', timeout });
+  if (play) await page.waitForSelector('#introPlay', { timeout });
 }
 
-/** Walk Loading → Intro → Entry Mode and choose Guest. Ends on Game Home. */
+/** A round has started: the countdown / play state with the HUD on screen. */
+export async function roundStarted(page, timeout = 20_000) {
+  await page.waitForFunction(() => { const s = window.__ssc && window.__ssc.game.state; return s === 'count' || s === 'play'; }, null, { timeout });
+  await page.waitForSelector('#hud', { timeout });
+}
+
+/** Wait until the countdown is over and Santa is actually playing. */
+export const waitForPlay = (page, timeout = 20_000) => page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout });
+
+/** Walk Loading → Intro → Entry Mode and choose Guest. Choosing guest starts a round straight away: ends once it has started. */
 export async function enterAsGuest(page) {
   await page.goto('/');
-  await page.waitForSelector('#introScreen', { timeout: 20_000 });
+  await introReady(page);
   await page.click('#introContinue');
   await page.waitForSelector('#entrySheet');
   await page.click('#guestBtn');
-  await homeReady(page);
+  await roundStarted(page);
 }
 
-/** The Play button pulses forever, so Playwright never sees it as "stable": force the click. */
-export const clickPlay = (page, sel = '#playBtn') => page.click(sel, { force: true });
+/** Results → "Main menu": back on the Introduction, which now offers Play (#introPlay). */
+export async function backToIntro(page) {
+  await page.click('#homeBtn');
+  await introReady(page, { play: true });
+}
+
+/** The Play buttons may pulse, so Playwright never sees them as "stable": force the click. (#introPlay on the Intro, #againBtn on Results) */
+export const clickPlay = (page, sel = '#introPlay') => page.click(sel, { force: true });
 
 /** Make Santa catch phones like the attract-mode demo does, for `ms` milliseconds (needs the e2e test hook). */
 export async function botFor(page, ms) {
@@ -45,9 +62,13 @@ export async function botFor(page, ms) {
   }), ms);
 }
 
-/** Wait until the round is over and the Results screen is showing. */
+/** Wait until the round is over, the Results screen is showing and the score has finished counting up from 0. */
 export async function waitForResults(page, timeout = 60_000) {
   await page.waitForSelector('#overScreen', { timeout });
+  await page.waitForFunction(() => {
+    const e = document.querySelector('#finalScore');
+    return !!e && e.getAttribute('aria-label') === 'Your score: ' + e.textContent.trim();
+  }, null, { timeout: 10_000 });
 }
 
 /** Reserved test numbers (Supabase fixed-OTP numbers during the run; the Send-SMS hook never messages them). */

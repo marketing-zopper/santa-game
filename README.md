@@ -1,4 +1,4 @@
-# Santa's Safe Catch · Zopper Christmas Challenge
+# Ho Ho Ho Merry Catch-mas · Zopper Christmas Challenge
 
 In-store mobile game: swipe to move Santa and catch falling phones in his sack. React + Vite + Supabase version of the
 original game (`marketing-zopper/Santa-Safe-Catch`). The game itself — artwork, CSS, canvas engine, rules, sounds — is the
@@ -73,7 +73,7 @@ docs/                     MIGRATION.md (React/Supabase migration) · WATI_OTP_RE
 
 ## Responsive design & browser support
 
-The original design is a phone-portrait game; the UI layer is now responsive from 320 px phones to 2560 px monitors. On tablets, laptops and desktops the menus, sheets, HUD and banners are scaled up (CSS `zoom`, capped at 1.6x; phones are unchanged) and the HUD / menu bar stay over the playfield instead of the far screen corners; the intro's action bar sits in a centred column. See `src/styles/responsive.css` and `GameController.resize()`.
+The original design is a phone-portrait game. On tablets, laptops and desktops the whole game stays at phone size: `#app` is a centred column at most 480 px wide on a navy gradient (like the Housefull game), so fonts, buttons and the playfield keep their mobile sizes. Because the canvas is never wider than 480 px, `GameController.resize()` keeps `--ui-zoom` at 1; the zoom rules in `src/styles/responsive.css` remain but have no effect inside the column.
 
 Tested in **Chrome, Edge, Firefox and WebKit (the Safari engine)** at 16 viewport sizes (iPhone SE, Android, iPhone Pro Max, iPad Air/Pro, laptops, Full HD, QHD, ultrawide). Real Safari on iOS/macOS and real devices could not be tested here. Firefox older than 126 ignores `zoom` (the UI simply stays at phone size there).
 

@@ -1,20 +1,24 @@
 // Cross-browser compatibility (runs in Chrome, Edge, Firefox and WebKit/Safari-engine — see playwright.config.js).
 import { test, expect } from '@playwright/test';
-import { enterAsGuest, clickPlay, botFor, waitForResults } from './helpers.js';
+import { enterAsGuest, botFor, waitForResults, waitForPlay, SUPABASE_URL, ANON_KEY } from './helpers.js';
+
+// sign-in buttons only exist when the build has Supabase config (otherwise they would open a form that can't work)
+const SIGN_IN = !!(SUPABASE_URL && ANON_KEY);
 
 test.describe('Cross-browser', () => {
   test('loads without script errors and gets through the whole guest journey', async ({ page, browserName }) => {
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/autoplay|play\(\)|NotAllowed|favicon/i.test(m.text())) errors.push(m.text()); });
-    await enterAsGuest(page);
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 25_000 });
+    await enterAsGuest(page);                                                                     // choosing guest starts the round
+    await waitForPlay(page, 25_000);
     await botFor(page, 7500);
     expect(await page.evaluate(() => window.__ssc.game.sim.score)).toBeGreaterThan(0);          // the canvas engine really plays here
     await page.evaluate(() => window.__ssc.game.quit());
     await waitForResults(page);
-    await expect(page.locator('#resultSignInBtn')).toBeVisible();
+    await expect(page.locator('#resultSignInBtn')).toHaveCount(SIGN_IN ? 1 : 0);
+    await page.click('#homeBtn');                                                                 // Main menu → Intro with Play
+    await page.waitForSelector('#introPlay');
     expect(errors, `${browserName}: ${errors.join(' | ')}`).toEqual([]);
   });
 
@@ -42,6 +46,8 @@ test.describe('Cross-browser', () => {
     await page.goto('/');
     await page.waitForSelector('#introScreen', { timeout: 25_000 });
     await page.click('#introContinue');
+    await page.waitForSelector('#entrySheet');
+    test.skip(!SIGN_IN, 'build has no Supabase config: sign-in is unavailable, so the form cannot be opened');
     await page.click('#signInBtn');
     await page.waitForSelector('#regForm');
     const s = await page.evaluate(() => {
@@ -57,12 +63,11 @@ test.describe('Cross-browser', () => {
   });
 
   test('the guest result screen is usable: buttons visible, nothing clipped', async ({ page }) => {
-    await enterAsGuest(page);
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 25_000 });
+    await enterAsGuest(page);                                                                     // choosing guest starts the round
+    await waitForPlay(page, 25_000);
     await page.evaluate(() => window.__ssc.game.quit());
     await waitForResults(page);
-    for (const sel of ['#againBtn', '#resultSignInBtn', '#homeBtn']) { await page.locator(sel).scrollIntoViewIfNeeded(); await expect(page.locator(sel)).toBeVisible(); }
+    for (const sel of ['#againBtn', ...(SIGN_IN ? ['#resultSignInBtn'] : []), '#homeBtn']) { await page.locator(sel).scrollIntoViewIfNeeded(); await expect(page.locator(sel)).toBeVisible(); }
   });
 
   test('background music: playing from landing (silently if the browser demands a tap) and audible after the first tap', async ({ page, browserName }) => {

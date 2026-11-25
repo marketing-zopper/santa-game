@@ -1,26 +1,36 @@
 // Guest journey: no login, same game, and NOTHING stored or sent anywhere.
 import { test, expect } from '@playwright/test';
-import { enterAsGuest, clickPlay, botFor, waitForResults, homeReady } from './helpers.js';
+import { enterAsGuest, clickPlay, botFor, waitForResults, introReady, roundStarted, waitForPlay, backToIntro, SUPABASE_URL, ANON_KEY } from './helpers.js';
+// sign-in buttons only exist when the build has Supabase config (otherwise they would open a form that can't work)
+const SIGN_IN = !!(SUPABASE_URL && ANON_KEY);
 
 test.describe('Guest journey', () => {
-  test('QR entry → loading → introduction → entry mode → guest → game home', async ({ page }) => {
+  test('QR entry → loading → introduction → entry mode → guest → round starts straight away (no Game Home)', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('#loader')).toBeVisible();                       // 2. loading
     await expect(page.locator('#loaderTip')).toContainText('…');
     await page.waitForSelector('#introScreen', { timeout: 20_000 });           // 3. introduction
     await expect(page.locator('.intro-card h2').first()).toContainText('How it works');
-    await expect(page.locator('#introPrizes li')).toHaveCount(3);
+    await expect(page.locator('#introPrizes')).toContainText('Free Device Doctor plan');   // default prize option
+    await expect(page.locator('#introPrizes .ph-perks li')).toHaveCount(4);
+    await expect(page.locator('#introDates')).toHaveText('Challenge runs till 31 January 2027. Winners announced on 1 February 2027');
+    await expect(page.locator('#knowMore')).toHaveCount(0);                    // "Know more" was removed
+    await expect(page.locator('.player-card')).toHaveCount(0);                 // nobody chosen yet: no player card, Continue not Play
+    await expect(page.locator('#introPlay')).toHaveCount(0);
     await page.click('#introContinue');
     await page.waitForSelector('#entrySheet');                                 // 4. choose entry mode
     await expect(page.locator('#signInBtn')).toBeVisible();
-    await expect(page.locator('#signInBtn')).toHaveText('Sign In with OTP');
+    await expect(page.locator('#signInBtn')).toHaveText('Sign in with WhatsApp');
     await expect(page.locator('#guestBtn')).toBeVisible();
+    await expect(page.locator('#guestBtn')).toHaveText('Play as guest');
     await expect(page.locator('.entry-card')).toHaveCount(2);
     await page.click('#guestBtn');
-    await page.waitForSelector('#startScreen');                                // 5. game home
-    await expect(page.locator('#playBtn')).toBeVisible();
-    await expect(page.locator('#howBtn')).toBeVisible();
-    await expect(page.locator('#playerName')).toHaveText('Guest');
+    await expect(page.locator('#count')).toBeVisible();                        // 5. straight into a round: countdown + HUD
+    await expect(page.locator('#hud')).toBeVisible();
+    await expect(page.locator('#startScreen')).toHaveCount(0);                 // Game Home is never shown
+    await expect(page.locator('#entrySheet')).toHaveCount(0);
+    await waitForPlay(page);
+    await expect(page.locator('#startScreen')).toHaveCount(0);
   });
 
   test('entry mode: back returns to the introduction', async ({ page }) => {
@@ -33,26 +43,33 @@ test.describe('Guest journey', () => {
     await expect(page.locator('#introScreen')).toBeVisible();
   });
 
-  test('guests have NO leaderboard anywhere (home, results, how-to-play)', async ({ page }) => {
+  test('guests have NO leaderboard anywhere (in game, results, main menu)', async ({ page }) => {
     await enterAsGuest(page);
     await expect(page.locator('#leaderBtn')).toHaveCount(0);
     await expect(page.getByText('Leaderboard', { exact: true })).toHaveCount(0);
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await waitForPlay(page);
     await page.evaluate(() => window.__ssc.game.quit());
     await waitForResults(page);
     await expect(page.locator('#resultLeaderBtn')).toHaveCount(0);
     await expect(page.locator('#leaderSheet, .lb-list')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /leaderboard/i })).toHaveCount(0);
-    await expect(page.locator('#result')).toContainText("isn't saved");
-    await expect(page.locator('#resultSignInBtn')).toHaveText('Sign In with OTP');          // …but a way to sign in
-    await expect(page.locator('#overScreen')).toContainText('Want to save your future scores and climb the leaderboard? Sign in to compete!');
+    await expect(page.locator('#result')).toContainText(/wasn.t saved/);
+    if (SIGN_IN) await expect(page.locator('#result #resultSignInBtn')).toHaveText('Sign in to win');
+    else await expect(page.locator('#resultSignInBtn')).toHaveCount(0);   // …but a way to sign in, inside the gold prize card
+    await expect(page.locator('#result')).toContainText('Top 100 win a free Device Doctor plan');
+    await backToIntro(page);                                                   // "Main menu" → the Introduction with a guest player card
+    await expect(page.locator('.player-card')).toContainText('Playing as guest');
+    await expect(page.locator('.player-card .pc-signin')).toHaveCount(SIGN_IN ? 1 : 0);
+    await expect(page.locator('.pc-lb, #leaderBtn')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /leaderboard/i })).toHaveCount(0);
+    await expect(page.locator('#leaderSheet, .lb-list')).toHaveCount(0);
   });
 
   test('full round: countdown → play → game over → results → play again (repeatedly), one animation loop only', async ({ page }) => {
-    await enterAsGuest(page);
+    await enterAsGuest(page);                                                  // choosing guest starts round 1
+    let best = 0;
     for (let round = 1; round <= 3; round++) {
-      await clickPlay(page, round === 1 ? '#playBtn' : '#againBtn');
+      if (round > 1) await clickPlay(page, '#againBtn');
       await expect(page.locator('#count')).toBeVisible();                      // 6. start game: countdown
       await expect(page.locator('#hud')).toBeVisible();
       await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
@@ -69,41 +86,49 @@ test.describe('Guest journey', () => {
       await page.evaluate(() => window.__ssc.game.quit());
       await expect(page.locator('#banner')).toContainText('Game over');        // 7. game over
       await waitForResults(page);                                              // 8. results
-      await expect(page.locator('#finalScore')).toHaveText(String(score));
-      await expect(page.locator('#stBest')).toHaveText(String(score));         // in-memory best for this visit
+      best = Math.max(best, score);
+      await expect(page.locator('#finalScore')).toHaveText(String(score));     // (waitForResults waited for the count-up to finish)
+      await expect(page.locator('#stBest')).toHaveText(String(best));          // in-memory best for this visit
       await expect(page.locator('#againBtn')).toBeVisible();
     }
   });
 
-  test('guest best score is kept in memory only: higher in round 2, lost on refresh', async ({ page }) => {
+  test('guest best score is kept in memory only: shown on the main menu, lost on refresh', async ({ page }) => {
     await enterAsGuest(page);
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await waitForPlay(page);
     await botFor(page, 7500);
     await page.evaluate(() => window.__ssc.game.quit());
     await waitForResults(page);
     const best = Number(await page.locator('#stBest').textContent());
     expect(best).toBeGreaterThan(0);
-    await page.click('#homeBtn');
-    await expect(page.locator('#menuBest')).toHaveText(String(best));          // remembered while the page lives
+    await backToIntro(page);
+    await expect(page.locator('.player-card strong')).toHaveText(String(best));   // "Your best this visit", remembered while the page lives
+    await clickPlay(page);                                                     // Main menu → Play starts another guest round
+    await roundStarted(page);
+    await expect(page.locator('#hudBest')).toHaveText(String(best));
     await page.reload();                                                       // …and gone after a refresh
-    await page.waitForSelector('#introScreen', { timeout: 20_000 });
-    await page.click('#introContinue'); await page.click('#guestBtn'); await homeReady(page);
-    await expect(page.locator('#menuBest')).toHaveText('0');
+    await introReady(page);
+    await expect(page.locator('.player-card')).toHaveCount(0);                 // a refresh forgets the guest entirely
+    await page.click('#introContinue'); await page.click('#guestBtn'); await roundStarted(page);
+    await expect(page.locator('#hudBest')).toHaveText('0');
   });
 
   test('ZERO persistence: no storage, no cookies, no network calls to Supabase for a guest', async ({ page, context }) => {
     const supabaseCalls = [];
     page.on('request', (r) => { if (/supabase\.co/.test(r.url())) supabaseCalls.push(r.method() + ' ' + r.url()); });
     await enterAsGuest(page);
-    await page.click('#muteBtn, #menuMute');                                   // even a preference must not be stored for a guest
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await page.click('#muteBtn');                                              // even a preference must not be stored for a guest
+    await waitForPlay(page);
     await botFor(page, 3500);
     await page.evaluate(() => window.__ssc.game.quit());
     await waitForResults(page);
     await page.click('#againBtn');
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await waitForPlay(page);
+    await page.evaluate(() => window.__ssc.game.quit());
+    await waitForResults(page);
+    await backToIntro(page);                                                   // the main menu (Intro + guest card) stores nothing either
+    await clickPlay(page);
+    await waitForPlay(page);
     await page.evaluate(() => window.__ssc.game.quit());
     await waitForResults(page);
 
@@ -122,8 +147,7 @@ test.describe('Guest journey', () => {
 
   test('pause / resume / end game (button and keyboard)', async ({ page }) => {
     await enterAsGuest(page);
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await waitForPlay(page);
     await page.click('#pauseBtn');
     await expect(page.locator('#pauseScreen')).toBeVisible();
     expect(await page.evaluate(() => window.__ssc.game.state)).toBe('pause');
@@ -145,8 +169,7 @@ test.describe('Guest journey', () => {
   test('controls: touch swipe and keyboard move Santa', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'touch events are injected through the Chrome DevTools Protocol');
     await enterAsGuest(page);
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await waitForPlay(page);
     const x0 = await page.evaluate(() => window.__ssc.game.sim.target);
     const cdp = await page.context().newCDPSession(page);
     const y = 400;
@@ -180,17 +203,19 @@ test.describe('Guest journey', () => {
     expect(await page.evaluate(() => window.__audio.contexts)).toBe(0);        // nothing before a gesture
     await page.click('#introContinue');
     expect(await page.evaluate(() => window.__audio.contexts)).toBe(1);        // created by the first tap
-    await page.click('#guestBtn'); await page.waitForSelector('#startScreen');
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await page.click('#guestBtn');                                             // guest → the round (and its countdown) starts at once
+    await waitForPlay(page);
     expect(await page.evaluate(() => window.__audio.oscillators)).toBeGreaterThanOrEqual(4);   // 3-2-1 beeps + go
+    await page.click('#muteBtn');                                              // mute (the in-game sound button; there is no Game Home any more)
     await page.evaluate(() => window.__ssc.game.quit()); await waitForResults(page);
-    await page.click('#homeBtn');
-    await page.click('#menuMute');                                             // mute
     const before = await page.evaluate(() => window.__audio.oscillators);
-    await clickPlay(page);
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
+    await clickPlay(page, '#againBtn');
+    await waitForPlay(page);
     expect(await page.evaluate(() => window.__audio.oscillators)).toBe(before); // muted: silent countdown
+    await backToIntro(page);                                                   // …and still muted for a round started from the main menu
+    await clickPlay(page);
+    await waitForPlay(page);
+    expect(await page.evaluate(() => window.__audio.oscillators)).toBe(before);
   });
 
   test('background music: starts on landing, audible on the first tap, loops, follows the sound button, keeps playing through a round, stores nothing', async ({ page, context, browserName }) => {
@@ -222,31 +247,28 @@ test.describe('Guest journey', () => {
     await page.waitForTimeout(1500);
     expect((await st()).t).toBeGreaterThan(s0.t);                              // really playing
 
-    await page.click('#guestBtn');
-    await homeReady(page);
-    await expect.poll(async () => (await st()).paused).toBe(false);           // keeps playing across screens
+    await page.click('#guestBtn');                                            // guest → straight into a round
+    await roundStarted(page);
+    await expect.poll(async () => (await st()).paused).toBe(false);           // keeps playing across screens and through the countdown
+    await waitForPlay(page);
+    expect((await st()).paused).toBe(false);
 
-    await page.click('#menuMute');                                            // top-right sound button → pause
+    await page.click('#muteBtn');                                             // the sound button → pause
     await expect.poll(async () => (await st()).paused).toBe(true);
     const tPaused = (await st()).t;
     await page.waitForTimeout(800);
     expect((await st()).t).toBe(tPaused);                                      // truly stopped
-    await page.click('#menuMute');                                            // → play again, from where it stopped
+    await page.click('#muteBtn');                                             // → play again, from where it stopped
     await expect.poll(async () => (await st()).paused).toBe(false);
     expect((await st()).t).toBeGreaterThanOrEqual(tPaused);
 
-    await clickPlay(page);                                                    // music continues through the countdown and the round
-    await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
-    expect((await st()).paused).toBe(false);
-    await page.click('#muteBtn');                                             // in-game sound button works too
-    await expect.poll(async () => (await st()).paused).toBe(true);
-    await page.click('#muteBtn');
-    await expect.poll(async () => (await st()).paused).toBe(false);
     await page.click('#pauseBtn');                                            // pausing the GAME does not stop the music
     await expect(page.locator('#pauseScreen')).toBeVisible();
     expect((await st()).paused).toBe(false);
     await page.click('#quitBtn');
     await waitForResults(page);
+    expect((await st()).paused).toBe(false);
+    await backToIntro(page);                                                  // …nor does going back to the main menu
     expect((await st()).paused).toBe(false);
 
     // loops: jump to the last half second, it must wrap around instead of ending

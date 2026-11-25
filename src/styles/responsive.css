@@ -42,6 +42,6 @@ body::-webkit-scrollbar{display:none}
 
 /* Buttons inside a scrolling sheet keep their full height: the sheet scrolls instead of squashing them (the "Let's Go" CTA on short phones) */
 .panel > .btn, .panel > .btn-stack, .panel > .btn-row { flex: none; }
-.sheet-panel > .btn { height: 56px; font-size: 24px; padding: 0 28px; }   /* 18px + 10px extra padding */
+.sheet-panel > .btn { height: 52px; font-size: 18px; padding: 0 28px; }   /* 18px + 10px extra padding */
 .sheet-panel > .btn svg { width: .78em; height: .78em; }
 .sheet-panel { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }

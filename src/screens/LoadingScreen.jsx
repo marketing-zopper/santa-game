@@ -41,7 +41,7 @@ export default function LoadingScreen({ authReady, onReveal, onGone }) {
 
   return (
     <div className={'loader' + (out ? ' out' : '')} id="loader">
-      <img className="loader-logo" src="/assets/logo.webp" alt="Santa's Safe Catch" />
+      <img className="loader-logo" src="/assets/logo.webp" alt="Ho Ho Ho Merry Catch-mas" />
       <div className="loader-bar" role="progressbar" aria-label="Loading" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i id="loaderFill" style={{ width: pct + '%' }} /></div>
       <p className="loader-tip" id="loaderTip">{TIPS[tip]}</p>
     </div>

@@ -14,9 +14,9 @@ export default function HomeScreen({ mode, name, best, muted, busy, onPlay, onHo
         <button className="round-btn glass" id="menuMute" aria-label="Music and sound on/off" onClick={onMute}><MuteIcon muted={muted} /></button>
       </div>
       <div className="logo">
-        <span className="tag dark">Zopper Christmas Challenge</span>
-        <img src="/assets/logo.webp" alt="Santa's Safe Catch" />
-        <div className="logo-sub">Catch the phones before they crack!</div>
+        <span className="tag dark powered">Powered by <img src="/assets/zopper.webp" alt="Zopper" /></span>
+        <img src="/assets/logo.webp" alt="Ho Ho Ho Merry Catch-mas" />
+        <div className="logo-sub">Keep every phone safe this Christmas</div>
       </div>
       <div className="menu-actions">
         <button className="btn play" id="playBtn" onClick={onPlay} disabled={busy}><PlayIcon />PLAY</button>

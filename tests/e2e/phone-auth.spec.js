@@ -5,7 +5,7 @@
 // (see tests/e2e/global-setup.js). Needs SUPABASE_SERVICE_ROLE_KEY + SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_REF.
 import { test, expect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
-import { ANON_KEY, SERVICE_KEY, SUPABASE_URL, STORAGE_KEY, TEST_PHONES, OTP_CODE, PHONE_UI_READY, botFor, clickPlay, homeReady, injectSession, makeTestUser, deleteUsersByPhone, waitForResults } from './helpers.js';
+import { ANON_KEY, SERVICE_KEY, SUPABASE_URL, STORAGE_KEY, TEST_PHONES, OTP_CODE, PHONE_UI_READY, botFor, clickPlay, introReady, roundStarted, waitForPlay, injectSession, makeTestUser, deleteUsersByPhone, waitForResults } from './helpers.js';
 
 test.skip(!SERVICE_KEY || !process.env.SUPABASE_ACCESS_TOKEN, 'set SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF to run the phone-OTP tests');
 test.describe.configure({ mode: 'serial' });
@@ -28,10 +28,11 @@ const sendOtp = async (page, details) => { await fill(page, details); await page
 const enterCode = async (page, code = OTP_CODE()) => { await page.fill('#otpInput', code); };
 const profileOf = async (phone10) => (await admin.from('profiles').select('*').eq('phone', '+91' + phone10).maybeSingle()).data;
 const authUsersWithPhone = async (phone10) => ((await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })).data.users || []).filter((u) => u.phone === '91' + phone10);
-const play = async (page, ms = 7500) => {
-  await page.waitForFunction(() => window.__ssc.game.state === 'menu');
-  await clickPlay(page);
-  await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 25_000 });
+// choosing guest / finishing sign-in starts a round by itself; pass `from` to start one from a button (#introPlay, #againBtn)
+const SAVED = /You’re in the top|Break into the top/;                      // the saved-result card on Results
+const play = async (page, ms = 7500, from = null) => {
+  if (from) await clickPlay(page, from);
+  await waitForPlay(page, 25_000);
   await botFor(page, ms);
   await page.evaluate(() => window.__ssc.game.quit());
   await waitForResults(page);
@@ -39,9 +40,10 @@ const play = async (page, ms = 7500) => {
 
 test('the setup is ready (test OTP numbers are active)', () => { expect(PHONE_UI_READY()).toBe(true); });
 
-test('Entry Mode offers "Sign In with OTP" and "Play as Guest" — Google is gone from the player app', async ({ page }) => {
+test('Entry Mode offers "Sign in with WhatsApp" and "Play as guest" — Google is gone from the player app', async ({ page }) => {
   await toEntry(page);
-  await expect(page.locator('#signInBtn')).toHaveText('Sign In with OTP');
+  await expect(page.locator('#signInBtn')).toHaveText('Sign in with WhatsApp');
+  await expect(page.locator('#guestBtn')).toHaveText('Play as guest');
   await expect(page.locator('#guestBtn')).toBeVisible();
   await expect(page.locator('#googleBtn')).toHaveCount(0);
   expect(await page.locator('body').innerText()).not.toMatch(/google/i);
@@ -53,7 +55,7 @@ test('registration form: three required fields, exactly the four Croma regions, 
   const otpCalls = [];
   page.on('request', (r) => { if (/\/auth\/v1\/otp/.test(r.url())) otpCalls.push(r.url()); });
   await openForm(page);
-  await expect(page.locator('#authTitle')).toContainText('Join the');
+  await expect(page.locator('#authTitle')).toContainText('Sign in');
   await expect(page.locator('#regForm label.rfield')).toHaveCount(3);
   await expect(page.locator('#regForm label.rfield .rlbl')).toHaveText(['Full name', 'Store / Region', 'WhatsApp mobile number']);
   await expect(page.locator('#regRegion option')).toHaveText(['Select your Croma region', ...REGIONS]);       // exactly four, in order
@@ -83,7 +85,7 @@ test('registration form: three required fields, exactly the four Croma regions, 
   await expect(page.locator('#regName')).toHaveValue('  Priya   Nair  ');                // (trimmed only when submitted)
 });
 
-test('new player: OTP sent → wrong code rejected → right code registers, creates the profile ONLY now, lands on Game Home', async ({ page }) => {
+test('new player: OTP sent → wrong code rejected → right code registers, creates the profile ONLY now, starts a round', async ({ page }) => {
   await openForm(page);
   await sendOtp(page, { name: ' Neha   Kapoor ', region: 'Croma East Region', phone: P_NEW });
   await expect(page.locator('#authTitle')).toContainText('WhatsApp');
@@ -100,13 +102,18 @@ test('new player: OTP sent → wrong code rejected → right code registers, cre
   await expect(page.locator('#otpErr')).toContainText("isn't right");
   await expect(page.locator('.otp-box')).toHaveClass(/bad/);
   expect(await profileOf(P_NEW)).toBeNull();
-  await expect(page.locator('#startScreen')).toHaveCount(0);                              // no access without a valid session
+  await expect(page.locator('#hud')).toHaveCount(0);                                      // no round without a valid session
 
-  await enterCode(page);                                                                  // right code
-  await page.waitForSelector('#startScreen', { timeout: 20_000 });
+  await enterCode(page);                                                                  // right code → straight into a round
+  await roundStarted(page);
   await expect(page.locator('#authSheet')).toHaveCount(0);
-  await expect(page.locator('#playerName')).toHaveText('Neha Kapoor');
-  await expect(page.locator('#leaderBtn')).toBeVisible();                                 // leaderboard enabled
+  await expect(page.locator('.toast')).toContainText("You're in, Neha");
+  await page.evaluate(() => window.__ssc.game.quit());
+  await waitForResults(page);
+  await page.click('#homeBtn');                                                           // Main menu → Intro with the player card
+  await introReady(page, { play: true });
+  await expect(page.locator('.player-card.signed')).toContainText('Hi Neha');
+  await expect(page.locator('.player-card .pc-lb')).toBeVisible();                        // leaderboard enabled
   const p = await profileOf(P_NEW);
   expect(p).toMatchObject({ display_name: 'Neha Kapoor', region: 'Croma East Region', phone: '+91' + P_NEW, auth_provider: 'phone', verified: true, email: null });
   expect(p.registered_at).toBeTruthy(); expect(p.updated_at).toBeTruthy();
@@ -155,10 +162,9 @@ test('delivery failures, offline and expired codes show clear messages (no raw e
 test('verified player plays: games are saved with their Croma region; no Sign In button on their results', async ({ page }) => {
   await openForm(page);
   await sendOtp(page, { name: 'Anita Desai', region: 'Croma North Region', phone: P_PLAY });
-  await enterCode(page);
-  await homeReady(page);
+  await enterCode(page);                                                                  // signing in starts the round
   await play(page);
-  await expect(page.locator('#result')).toContainText('Your best:', { timeout: 20_000 });
+  await expect(page.locator('#result')).toContainText(SAVED, { timeout: 20_000 });
   await expect(page.locator('#resultSignInBtn')).toHaveCount(0);
   await expect(page.locator('#resultLeaderBtn')).toBeVisible();
   const p = await profileOf(P_PLAY);
@@ -178,11 +184,11 @@ test('returning player (new device / expired session): same phone + OTP restores
   try {
     await openForm(page);                                                                  // no session in this browser
     await sendOtp(page, { name: 'Totally Different', region: 'Croma West Region', phone: P_RETURN });   // typed something else on purpose
-    await enterCode(page);
-    await homeReady(page);
-    await expect(page.locator('#playerName')).toHaveText('Original Name');                  // existing name wins
-    await expect(page.locator('#menuBest')).toHaveText('777');                              // saved best restored from Supabase
-    await expect(page.locator('.toast')).toContainText('Welcome back, Original');
+    await enterCode(page);                                                                 // signing in starts a round
+    await roundStarted(page);
+    await expect(page.locator('.toast')).toContainText('Welcome back, Original');            // existing name wins
+    await expect(page.locator('#hudBest')).toHaveText('777');                               // saved best restored from Supabase
+    // (the round is left unfinished on purpose: finishing it would change games_played below)
     const p = await profileOf(P_RETURN);
     expect(p).toMatchObject({ id: existing.id, display_name: 'Original Name', region: 'Croma South Region', best_score: 777, games_played: 4 });
     expect((await authUsersWithPhone(P_RETURN)).length).toBe(1);                            // no duplicate account
@@ -190,12 +196,12 @@ test('returning player (new device / expired session): same phone + OTP restores
   } finally { await existing.cleanup(); }
 });
 
-test('GUEST result screen: "Sign In with OTP" — cancel restores the result, play again stays guest, signing in never saves the guest round', async ({ page }) => {
+test('GUEST result screen: "Sign in to win" — cancel restores the result, play again stays guest, signing in never saves the guest round', async ({ page }) => {
   const calls = [];
   page.on('request', (r) => { if (/functions\/v1\/(start|finish)-game/.test(r.url())) calls.push(new URL(r.url()).pathname.split('/').pop()); });
   await toEntry(page);
-  await page.click('#guestBtn');
-  await homeReady(page);
+  await page.click('#guestBtn');                                                          // guest → the round starts at once
+  await roundStarted(page);
   await expect(page.locator('#leaderBtn')).toHaveCount(0);
   await play(page);
   const score = await page.locator('#finalScore').textContent();
@@ -204,8 +210,8 @@ test('GUEST result screen: "Sign In with OTP" — cancel restores the result, pl
   // result screen: existing elements preserved + the new action and message, still no leaderboard
   await expect(page.locator('#stCaught')).toBeVisible(); await expect(page.locator('#stTime')).toBeVisible(); await expect(page.locator('#stBest')).toHaveText(score);
   await expect(page.locator('#againBtn')).toBeVisible();
-  await expect(page.locator('#resultSignInBtn')).toHaveText('Sign In with OTP');
-  await expect(page.locator('#overScreen')).toContainText('Want to save your future scores and climb the leaderboard? Sign in to compete!');
+  await expect(page.locator('#result #resultSignInBtn')).toHaveText('Sign in to win');
+  await expect(page.locator('#result')).toContainText('Top 100 win a free Device Doctor plan');
   await expect(page.locator('#resultLeaderBtn')).toHaveCount(0);
   expect(await page.locator('#overScreen').innerText()).not.toMatch(/will be saved|we.ll save this/i);   // no promise about the current score
 
@@ -224,45 +230,46 @@ test('GUEST result screen: "Sign In with OTP" — cancel restores the result, pl
   await expect(page.locator('#finalScore')).toHaveText(score);
 
   // Play Again continues as a guest, exactly as before
-  await page.click('#againBtn');
-  await page.waitForFunction(() => window.__ssc.game.state === 'play', null, { timeout: 15_000 });
-  await botFor(page, 2500);
-  await page.evaluate(() => window.__ssc.game.quit());
-  await waitForResults(page);
+  await play(page, 2500, '#againBtn');
   expect(calls).toEqual([]);                                                              // guest rounds never touched start-game / finish-game
   expect(await profileOf(P_GUEST)).toBeNull();
 
   // now actually sign in from the result screen
   await page.click('#resultSignInBtn');
   await sendOtp(page, { name: 'Guest Turned Player', region: 'Croma East Region', phone: P_GUEST });
-  await enterCode(page);
-  await page.waitForSelector('#startScreen', { timeout: 20_000 });
-  await expect(page.locator('#playerName')).toHaveText('Guest Turned Player');
-  await expect(page.locator('#leaderBtn')).toBeVisible();                                 // leaderboard now enabled
-  await expect(page.locator('#menuBest')).toHaveText('0');                                // the guest score did NOT carry over
+  await enterCode(page);                                                                  // signing in starts a NEW (signed-in) round at once
+  await roundStarted(page);
+  await expect(page.locator('.toast')).toContainText("You're in, Guest");
+  await expect(page.locator('#hudBest')).toHaveText('0');                                 // the guest score did NOT carry over
   const p = await profileOf(P_GUEST);
   expect(p).toMatchObject({ display_name: 'Guest Turned Player', region: 'Croma East Region', best_score: 0, games_played: 0 });
   expect((await admin.from('games').select('id').eq('player_id', p.id)).data).toEqual([]);                   // no game record from the guest round
-  expect((await admin.from('game_sessions').select('id').eq('player_id', p.id)).data).toEqual([]);           // no session either
-  expect(calls).toEqual([]);                                                              // still nothing sent to the game backend
+  await expect.poll(() => calls).toEqual(['start-game']);                                 // only the new round's session; the guest round was never submitted
+  expect(((await admin.from('game_sessions').select('id').eq('player_id', p.id)).data || []).length).toBeLessThanOrEqual(1);   // …just that one session
 
   // only NEW games are saved
   await play(page);
-  await expect(page.locator('#result')).toContainText('Your best:', { timeout: 20_000 });
+  await expect(page.locator('#result')).toContainText(SAVED, { timeout: 20_000 });
   expect(calls).toEqual(['start-game', 'finish-game']);
   expect((await admin.from('games').select('region').eq('player_id', p.id)).data).toEqual([{ region: 'Croma East Region' }]);
   await expect(page.locator('#resultSignInBtn')).toHaveCount(0);
+  await expect(page.locator('#resultLeaderBtn')).toBeVisible();                          // leaderboard now enabled
 });
 
-test('guest can also sign in from Game Home ("Playing as Guest · Sign in")', async ({ page }) => {
+test('guest can also sign in from the main menu (Intro guest card · "Sign in to save & win")', async ({ page }) => {
   await toEntry(page);
-  await page.click('#guestBtn'); await homeReady(page);
-  await expect(page.locator('#playerChip')).toContainText('Sign in');
-  await page.click('#playerChip');
+  await page.click('#guestBtn');
+  await play(page, 0);
+  await page.click('#homeBtn');
+  await introReady(page, { play: true });
+  await expect(page.locator('.player-card .pc-signin')).toHaveText('Sign in to save & win');
+  await page.click('.player-card .pc-signin');
   await expect(page.locator('#authSheet #regForm')).toBeVisible();
   await page.click('#authBack');
-  await expect(page.locator('#startScreen')).toBeVisible();                              // cancelled: still a guest on Game Home
-  await expect(page.locator('#leaderBtn')).toHaveCount(0);
+  await expect(page.locator('#authSheet')).toHaveCount(0);
+  await expect(page.locator('.player-card')).toContainText('Playing as guest');           // cancelled: still a guest on the Intro
+  await expect(page.locator('#introPlay')).toBeVisible();
+  await expect(page.locator('.pc-lb, #leaderBtn')).toHaveCount(0);
 });
 
 test('verified number but registration never finished: only name + region are asked; cancelling signs out', async ({ page, context }) => {
@@ -294,8 +301,8 @@ test('verified number but registration never finished: only name + region are as
     await p2.fill('#regName', 'Late Registrant');
     await p2.selectOption('#regRegion', 'Croma West Region');
     await p2.click('#regSubmit');
-    await p2.waitForSelector('#startScreen', { timeout: 20_000 });
-    await expect(p2.locator('#playerName')).toHaveText('Late Registrant');
+    await roundStarted(p2);                                                                // registered → straight into a round
+    await expect(p2.locator('.toast')).toContainText("You're in, Late");
     const prof = (await admin.from('profiles').select('display_name, region, phone').eq('id', u2.id).single()).data;
     expect(prof).toEqual({ display_name: 'Late Registrant', region: 'Croma West Region', phone: u2.phone });
     await ctx2.close();

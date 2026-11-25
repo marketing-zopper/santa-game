@@ -19,7 +19,7 @@ import { normalizeIndianMobile, formatIndianMobile } from '../lib/phone.js';
 import { CAMPAIGN } from '../lib/campaign.js';
 import { sendOtp, verifyOtp } from '../services/otpAuth.js';
 
-const TITLES = { form: ['Join the', 'challenge'], otp: ['Check your', 'WhatsApp'], complete: ['Almost', 'there'] };
+const TITLES = { form: ['Sign in', 'to win'], otp: ['Check your', 'WhatsApp'], complete: ['Almost', 'there'] };
 const RESEND_SECONDS = 60;
 
 const tidyName = (v) => v.replace(/\s+/g, ' ').trim();
@@ -129,7 +129,7 @@ export default function AuthSheet({ mode = 'signin', onClose, onDone }) {
         <button className="reg-back" id="authBack" type="button" aria-label="Back" onClick={back}><BackIcon /></button>
         <div className="p-head reg-head">
           <img className="reg-santa" src="/assets/santa.webp" alt="" />
-          <span className="tag">Zopper Christmas Challenge</span>
+          <span className="tag powered">Powered by <img src="/assets/zopper.webp" alt="Zopper" /></span>
           <h2 className="reg-title" id="authTitle"><i>{t1}</i><span>{t2}</span></h2>
         </div>
         <div className="p-body">
@@ -155,13 +155,14 @@ export default function AuthSheet({ mode = 'signin', onClose, onDone }) {
                         const raw = e.target.value.replace(/[^\d+\s]/g, '');
                         const full = normalizeIndianMobile(raw);          // pasted "+91 98765 43210" → just the 10 digits
                         setPhoneInput(full && raw.replace(/\D/g, '').length > 10 ? full.slice(3) : raw); setError(null);
-                      }} /></span></label>
+                      }} /></span>
+                  <span className="rhint">Use the number on your Zopper plan to be eligible</span></label>
               ) : null}
               {error ? <p className="form-err" id="regErr" role="alert">{error.text}</p> : null}
               <button className="btn" id="regSubmit" type="submit" disabled={busy}><span>{busy ? (mode === 'complete' ? 'Saving…' : 'Sending code…') : mode === 'complete' ? 'Continue' : 'Send OTP'}</span></button>
               <p className="fine">
-                {mode === 'complete' ? '' : "We'll send a 6-digit code to this number on WhatsApp. "}
-                By continuing you agree that Zopper may store your name, WhatsApp number, store region and scores to run this contest.
+                {mode === 'complete' ? '' : "We'll WhatsApp you a 6-digit code. "}
+                Your name, number, region and scores are only used to run this contest.
                 {CAMPAIGN.termsUrl ? <> <a href={CAMPAIGN.termsUrl} target="_blank" rel="noopener">Terms</a>.</> : null}
               </p>
             </form>

@@ -53,6 +53,17 @@ export const GuestIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="currentColor" /><path d="M4 21a8 8 0 0 1 16 0z" fill="currentColor" /></svg>
 );
 
+// "Just for fun": a game controller wearing a Santa hat (multi-colour, so it ignores currentColor)
+export const FunIcon = () => (
+  <svg viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M9 11.5c-3.3 0-5.6 2.2-6.2 5.6l-.9 5.2C1.5 25 3.2 27 5.4 27c1.4 0 2.6-.8 3.3-2l1.4-2.6h11.8l1.4 2.6c.7 1.2 1.9 2 3.3 2 2.2 0 3.9-2 3.5-4.7l-.9-5.2c-.6-3.4-2.9-5.6-6.2-5.6z" fill="#1B2559" />
+    <rect x="7.2" y="15" width="2.6" height="7.4" rx="1" fill="#fff" /><rect x="4.8" y="17.4" width="7.4" height="2.6" rx="1" fill="#fff" />
+    <circle cx="22.6" cy="16.4" r="1.9" fill="#F47B20" /><circle cx="25.6" cy="19.6" r="1.9" fill="#3FB5E8" />
+    <path d="M11 11.8c1-4.6 4.6-8.3 9-8.6 1.4-.1 2.4 1.5 1.6 2.7l-1.6 2.6 1 3.3z" fill="#E53935" />
+    <rect x="9.6" y="10.2" width="13.4" height="3" rx="1.5" fill="#fff" /><circle cx="22.4" cy="4.8" r="2" fill="#fff" />
+  </svg>
+);
+
 export const PinIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor" /></svg>
 );

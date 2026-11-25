@@ -1,7 +1,9 @@
 // Application shell: the approved user journey as a small state machine, and the bridge to the imperative game.
 //
 //   QR → LOADING → INTRODUCTION → CHOOSE ENTRY MODE ─┬─ Sign In with OTP → Registration → WhatsApp OTP → verify ─┐
-//                                                    └─ Play as Guest ───────────────────────────────────────────┴→ GAME HOME
+//                                                    └─ Play as Guest ───────────────────────────────────────────┴→ START GAME
+//   (straight into a round. "Main menu" on Results and a returning signed-in visitor both land on the INTRODUCTION, which
+//    carries the campaign info; GAME HOME is no longer shown, 'home' is only a hand-off stage while a round starts)
 //   → START GAME (countdown + play) → GAME OVER → RESULTS ─┬─ Play again
 //                                                          ├─ Leaderboard        (signed-in players ONLY)
 //                                                          └─ Sign In with OTP   (guests ONLY; the finished round stays a guest round)
@@ -9,7 +11,7 @@
 //   stage: 'loading' | 'intro' | 'entry' | 'home' | 'playing' | 'paused' | 'gameover' | 'results'
 //
 // Mode is derived, never stored: signed in (verified Supabase session + profile) → 'player'; chose guest → 'guest'; otherwise none.
-// A valid stored session skips Intro/Entry and lands on Game Home. Guests live in memory only — a refresh starts over.
+// A valid stored session lands on the Intro with the player card and Play (no Entry choice). Guests live in memory only — a refresh starts over.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { ToastProvider, useToast } from './contexts/ToastContext.jsx';
@@ -50,6 +52,9 @@ function GameApp() {
   const [round, setRound] = useState(null);              // { summary, result, prevBest, best } shown on the Results screen
   const [busy, setBusy] = useState(false);
   const [authOpen, setAuthOpen] = useState(null);       // null | { mode: 'signin' | 'complete', from: 'entry' | 'home' | 'results' | 'resume' }
+  // Choosing "Play as guest" or finishing sign-in goes straight into a round (countdown → play), not to Game Home.
+  // Game Home is still used for "Main menu" on Results and for returning players with a stored session.
+  const [autoStart, setAutoStart] = useState(false);
 
   const mode = signedIn ? 'player' : guest ? 'guest' : null;
   const bestNow = Math.max(signedIn ? (auth.profile && auth.profile.best) || 0 : 0, memBest);
@@ -97,9 +102,10 @@ function GameApp() {
 
   /* ---------- journey guards ---------- */
   // loader finished → Game Home for a valid session, otherwise the Introduction
-  const reveal = useCallback(() => { setStage(live.current.signedIn ? 'home' : 'intro'); }, []);
-  // a verified session that appears while on Intro / Entry → Game Home
-  useEffect(() => { if (signedIn && (stage === 'intro' || stage === 'entry')) setStage('home'); }, [signedIn, stage]);
+  // everyone lands on the Introduction (it carries the campaign info); a returning signed-in player's Continue starts a round
+  const reveal = useCallback(() => { setStage('intro'); }, []);
+  // signed in on the Entry screen (just finished sign-in, or a returning player pressed Continue) → straight into a round
+  useEffect(() => { if (signedIn && stage === 'entry') { setAutoStart(true); setStage('home'); } }, [signedIn, stage]);
   // player-only screens need a signed-in player or a guest; otherwise start from the Introduction
   useEffect(() => { if (!signedIn && !guest && PLAYER_STAGES.includes(stage) && auth.status !== 'loading') setStage('intro'); }, [signedIn, guest, stage, auth.status]);
   // phone verified earlier but registration never finished (closed the tab mid-way): ask for name + region only
@@ -123,9 +129,9 @@ function GameApp() {
     return () => window.removeEventListener('keydown', k);
   }, [sheet]);
 
-  /* ---------- signed-in extras on Game Home: retry unsent scores, ask for location once ---------- */
+  /* ---------- signed-in extras on the main menu (Intro) or a round hand-off: retry unsent scores, ask for location once ---------- */
   useEffect(() => {
-    if (stage !== 'home' || !signedIn || !auth.user) return;
+    if ((stage !== 'home' && stage !== 'intro') || !signedIn || !auth.user) return;
     const uid = auth.user.id;
     if (pending(uid).length) flushPending(uid).then(() => auth.refreshProfile());
     if (!geoAsked.current) { geoAsked.current = true; requestLocation().then((g) => { geoRef.current = g; }); }
@@ -160,6 +166,11 @@ function GameApp() {
     g.begin(seed);
   }, [auth, toast]);
 
+  // guest chosen / sign-in finished → start the round once the new mode has rendered (live.current is then up to date)
+  useEffect(() => {
+    if (autoStart && mode && stage === 'home' && !authOpen) { setAutoStart(false); startRound(); }
+  }, [autoStart, mode, stage, authOpen, startRound]);
+
   /* ---------- game over → results ---------- */
   handlers.current.gameOver = (summary) => {
     const r = roundRef.current || { session: null, practice: true, prevBest: 0 };
@@ -191,8 +202,9 @@ function GameApp() {
   };
 
   /* ---------- navigation actions ---------- */
-  const goHome = () => { if (gameRef.current) gameRef.current.goMenu(); clearTimeout(overTimer.current); setRound(null); setSheet(null); setStage('home'); };
-  const chooseGuest = () => { setGuest(true); setStage('home'); };
+  // "Main menu" on Results → back to the Introduction (campaign info + Continue), not the bare Game Home
+  const goHome = () => { if (gameRef.current) gameRef.current.goMenu(); clearTimeout(overTimer.current); setRound(null); setSheet(null); setStage('intro'); };
+  const chooseGuest = () => { setGuest(true); setAutoStart(true); setStage('home'); };
   const onChip = async () => {
     if (signedIn) { setGuest(false); await auth.signOut(); setStage('entry'); }   // sign out first, or the "signed in on Entry → Home" guard would bounce us
     else openSignIn('home');                             // guest → the same registration + OTP flow as everywhere else
@@ -215,9 +227,9 @@ function GameApp() {
     clearTimeout(overTimer.current);
     setAuthOpen(null); setGuest(false); setMemBest(0); setRound(null); setSheet(null);
     if (gameRef.current) gameRef.current.goMenu();
-    setStage('home');
+    setAutoStart(true); setStage('home');
     const first = String((p && p.name) || '').split(' ')[0] || 'there';
-    toast(p && p.existing ? `Welcome back, ${first}!` : `You're in, ${first}! Tap Play to start.`);
+    toast(p && p.existing ? `Welcome back, ${first}! Good luck` : `You're in, ${first}! Good luck`);
   };
 
   return (
@@ -231,12 +243,19 @@ function GameApp() {
       {banner && HUD_STAGES.includes(stage) ? <div id="banner" className="show" key={banner.key}>{banner.title}<small>{banner.sub}</small></div> : null}
       {count && stage === 'playing' ? <div id="count" className="tick" key={count.key}>{count.n}</div> : null}
 
-      {stage === 'intro' || stage === 'entry' ? <IntroScreen onContinue={() => { if (gameRef.current) gameRef.current.unlockAudio(); setStage('entry'); }} /> : null}
+      {stage === 'intro' || stage === 'entry' ? (
+        <IntroScreen mode={mode} name={auth.displayName} best={bestNow} busy={busy}
+          rank={auth.profile && auth.profile.rank} total={auth.profile && auth.profile.total}
+          onContinue={() => { if (gameRef.current) gameRef.current.unlockAudio(); setStage('entry'); }}
+          onPlay={startRound} onLeaderboard={() => signedIn && setSheet('leader')}
+          onSignIn={auth.configured ? () => openSignIn('intro') : null}
+          onSignOut={async () => { setGuest(false); await auth.signOut(); setStage('intro'); }} />
+      ) : null}
       {stage === 'entry' ? (
         <EntryModeScreen signInAvailable={auth.configured} onSignIn={() => openSignIn('entry')} onGuest={chooseGuest} onBack={() => setStage('intro')} />
       ) : null}
 
-      {stage === 'home' && mode ? (
+      {stage === 'home' && mode && !autoStart ? (
         <HomeScreen mode={mode} name={auth.displayName} best={bestNow} muted={muted} busy={busy}
           onPlay={startRound} onHow={() => setSheet('how')} onLeaderboard={() => signedIn && setSheet('leader')}
           onMute={toggleMute} onChip={onChip} />
@@ -244,7 +263,7 @@ function GameApp() {
 
       {stage === 'paused' ? <PauseScreen onResume={() => gameRef.current && gameRef.current.resume()} onQuit={() => gameRef.current && gameRef.current.quit()} /> : null}
       {stage === 'results' && round && mode && !(signedIn && round.result.kind === 'guest') ? (
-        <ResultsScreen mode={mode} round={round} onAgain={startRound} onHome={goHome} onLeaderboard={() => signedIn && setSheet('leader')} onSignIn={() => openSignIn('results')} />
+        <ResultsScreen mode={mode} round={round} onAgain={startRound} onHome={goHome} onLeaderboard={() => signedIn && setSheet('leader')} onSignIn={auth.configured ? () => openSignIn('results') : null} />
       ) : null}
 
       {/* sheets come AFTER the full-screen overlays so they stack on top (the Leaderboard opens from Results) */}
