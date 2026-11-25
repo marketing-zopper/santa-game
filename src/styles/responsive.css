@@ -39,3 +39,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 html,body{scrollbar-width:none}
 body::-webkit-scrollbar{display:none}
 .panel,.intro-scroll{scrollbar-width:thin}
+
+/* Buttons inside a scrolling sheet keep their full height: the sheet scrolls instead of squashing them (the "Let's Go" CTA on short phones) */
+.panel > .btn, .panel > .btn-stack, .panel > .btn-row { flex: none; }
+.sheet-panel > .btn { height: 56px; font-size: 24px; padding: 0 18px; }
+.sheet-panel > .btn svg { width: .78em; height: .78em; }
+.sheet-panel { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
