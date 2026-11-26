@@ -24,7 +24,6 @@ import Hud from './components/Hud.jsx';
 import LoadingScreen from './screens/LoadingScreen.jsx';
 import IntroScreen from './screens/IntroScreen.jsx';
 import EntryModeScreen from './screens/EntryModeScreen.jsx';
-import HomeScreen from './screens/HomeScreen.jsx';
 import HowToPlaySheet from './screens/HowToPlaySheet.jsx';
 import LeaderboardSheet from './screens/LeaderboardSheet.jsx';
 import PauseScreen from './screens/PauseScreen.jsx';
@@ -170,6 +169,10 @@ function GameApp() {
   useEffect(() => {
     if (autoStart && mode && stage === 'home' && !authOpen) { setAutoStart(false); startRound(); }
   }, [autoStart, mode, stage, authOpen, startRound]);
+  // safety net: never leave someone on the hand-off with no round starting
+  useEffect(() => {
+    if (stage === 'home' && mode && !autoStart && !busy && !startingRef.current && !authOpen) setStage('intro');
+  }, [stage, mode, autoStart, busy, authOpen]);
 
   /* ---------- game over → results ---------- */
   handlers.current.gameOver = (summary) => {
@@ -205,10 +208,6 @@ function GameApp() {
   // "Main menu" on Results → back to the Introduction (campaign info + Continue), not the bare Game Home
   const goHome = () => { if (gameRef.current) gameRef.current.goMenu(); clearTimeout(overTimer.current); setRound(null); setSheet(null); setStage('intro'); };
   const chooseGuest = () => { setGuest(true); setAutoStart(true); setStage('home'); };
-  const onChip = async () => {
-    if (signedIn) { setGuest(false); await auth.signOut(); setStage('entry'); }   // sign out first, or the "signed in on Entry → Home" guard would bounce us
-    else openSignIn('home');                             // guest → the same registration + OTP flow as everywhere else
-  };
   const closeSheet = (kind) => { if (kind === 'play') startRound(); else setSheet(null); };
 
   /* ---------- sign in (shared by Entry, Game Home and the guest Result screen) ---------- */
@@ -255,10 +254,12 @@ function GameApp() {
         <EntryModeScreen signInAvailable={auth.configured} onSignIn={() => openSignIn('entry')} onGuest={chooseGuest} onBack={() => setStage('intro')} />
       ) : null}
 
-      {stage === 'home' && mode && !autoStart ? (
-        <HomeScreen mode={mode} name={auth.displayName} best={bestNow} muted={muted} busy={busy}
-          onPlay={startRound} onHow={() => setSheet('how')} onLeaderboard={() => signedIn && setSheet('leader')}
-          onMute={toggleMute} onChip={onChip} />
+      {/* 'home' is only the hand-off into a round (guest chosen / sign-in finished). A signed-in round waits for the
+          server to issue a game session, so show a light "getting ready" note rather than the old Game Home screen. */}
+      {stage === 'home' && mode ? (
+        <div className="screen start-hold" id="startHold" role="status" aria-live="polite">
+          <p className="hold-card"><i className="hold-spin" aria-hidden="true" />Getting your game ready…</p>
+        </div>
       ) : null}
 
       {stage === 'paused' ? <PauseScreen onResume={() => gameRef.current && gameRef.current.resume()} onQuit={() => gameRef.current && gameRef.current.quit()} /> : null}

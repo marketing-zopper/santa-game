@@ -606,3 +606,9 @@ img{display:block}
 .g-tile{padding:8px}
 .g-tile-img{height:46px}
 .g-tile::before{width:12px;height:12px;top:-6px;background:radial-gradient(circle,#8A0A1B 0 30%,#D7142C 36%);box-shadow:-9px -1px 0 -1px #D7142C,9px -1px 0 -1px #D7142C}
+
+/* hand-off into a round while a signed-in game session is being issued */
+.start-hold{display:grid;place-items:center}
+.hold-card{display:flex;align-items:center;gap:10px;margin:0;padding:12px 18px;border-radius:999px;background:rgba(6,16,52,.85);color:#fff;font-size:15px;font-weight:600;box-shadow:inset 0 0 0 1px rgba(255,210,90,.5),0 10px 24px rgba(0,0,20,.4)}
+.hold-spin{width:18px;height:18px;border-radius:50%;border:3px solid rgba(255,210,90,.3);border-top-color:#FFD25A;animation:ph-spin .8s linear infinite}
+@media (prefers-reduced-motion:reduce){.hold-spin{animation-duration:2.4s}}
